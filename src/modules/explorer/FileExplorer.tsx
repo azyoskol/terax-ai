@@ -30,6 +30,13 @@ import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { EntryRow, PendingRow, StatusRow, type RowActions } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
 import {
+  GG_TIMEOUT_MS,
+  isCapitalGKey,
+  isPendingGKey,
+  isPlainVimKey,
+  normalizeVimKey,
+} from "./lib/vimKeys";
+import {
   copyToClipboard,
   relativePath,
   revealInFinder,
@@ -47,6 +54,7 @@ import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
 
 export type FileExplorerHandle = {
   focus: () => void;
+  focusBestSurface: () => void;
   isFocused: () => boolean;
   focusSearch: () => void;
 };
@@ -55,6 +63,7 @@ type Props = {
   rootPath: string | null;
   activeFilePath?: string | null;
   onOpenFile: (path: string, pin?: boolean) => void;
+  onFileOpened?: () => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
@@ -186,6 +195,7 @@ export const FileExplorer = memo(
       rootPath,
       activeFilePath,
       onOpenFile,
+      onFileOpened,
       onPathRenamed,
       onPathDeleted,
       onRevealInTerminal,
@@ -196,6 +206,7 @@ export const FileExplorer = memo(
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
     const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
+    const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
     const { lookup: lookupGitStatus } = useGitStatus(
       rootPath,
       gitDecorations ? gitStatus : null,
@@ -207,6 +218,8 @@ export const FileExplorer = memo(
     const searchRef = useRef<ExplorerSearchHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const pendingVimCreateRef = useRef(false);
+    const pendingGRef = useRef<number | null>(null);
 
     const { rows, entryIndexByPath } = useMemo(() => {
       if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
@@ -326,6 +339,20 @@ export const FileExplorer = memo(
             requestAnimationFrame(() => scrollEntryIntoView(first));
           }
         },
+        focusBestSurface: () => {
+          if (isSearchActive && searchRef.current?.hasResults()) {
+            searchRef.current.focusResults();
+          } else if (isSearchOpen) {
+            searchRef.current?.focus();
+          } else {
+            containerRef.current?.focus();
+            if (!selectedPath && entryPaths.length > 0) {
+              const first = entryPaths[0];
+              setSelectedPath(first);
+              requestAnimationFrame(() => scrollEntryIntoView(first));
+            }
+          }
+        },
         isFocused: () => {
           const c = containerRef.current;
           if (!c) return false;
@@ -337,8 +364,25 @@ export const FileExplorer = memo(
           searchRef.current?.focus();
         },
       }),
-      [entryPaths, scrollEntryIntoView, selectedPath],
+      [entryPaths, isSearchActive, isSearchOpen, scrollEntryIntoView, selectedPath],
     );
+
+    useEffect(() => {
+      return () => {
+        if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+      };
+    }, []);
+
+
+    useEffect(() => {
+      if (!pendingVimCreateRef.current) return;
+      if (tree.pendingCreate !== null) return;
+      pendingVimCreateRef.current = false;
+      requestAnimationFrame(() => {
+        if (isSearchOpen) searchRef.current?.focus();
+        else containerRef.current?.focus();
+      });
+    }, [tree.pendingCreate, isSearchOpen]);
 
     useGlobalShortcuts({
       "explorer.search": () => {
@@ -372,7 +416,7 @@ export const FileExplorer = memo(
       tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (tree.renaming || tree.pendingCreate || isSearchOpen) return;
+      if (tree.renaming || tree.pendingCreate) return;
       const target = e.target as HTMLElement;
       if (
         target.tagName === "INPUT" ||
@@ -382,6 +426,77 @@ export const FileExplorer = memo(
         return;
       if (entryPaths.length === 0) return;
 
+      if (vimNavigationEnabled) {
+        if (e.key === "/") {
+          e.preventDefault();
+          setIsSearchOpen(true);
+          searchRef.current?.focus();
+          return;
+        }
+        if (e.ctrlKey && e.key === "k") {
+          e.preventDefault();
+          if (isSearchOpen) searchRef.current?.focus();
+          return;
+        }
+        if (isPlainVimKey(e)) {
+          if (e.key === "a" || e.key === "A") {
+            const targetDir = (() => {
+              if (!selectedPath) return rootPath;
+              const idx = entryIndexByPath.get(selectedPath);
+              const row = idx !== undefined ? rows[idx] : undefined;
+              if (row?.kind === "entry" && row.isDir) return row.path;
+              return parentOf(selectedPath, rootPath);
+            })();
+            pendingVimCreateRef.current = true;
+            tree.beginCreate(targetDir, e.key === "a" ? "file" : "dir");
+            return;
+          }
+          if (e.key === "R") {
+            tree.refresh(rootPath);
+            return;
+          }
+          if (pendingGRef.current && e.key === "g") {
+            e.preventDefault();
+            if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+            pendingGRef.current = null;
+            if (entryPaths.length > 0) {
+              const first = entryPaths[0];
+              setSelectedPath(first);
+              requestAnimationFrame(() => scrollEntryIntoView(first));
+            }
+            return;
+          }
+          if (isPendingGKey(e)) {
+            e.preventDefault();
+            if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+            pendingGRef.current = window.setTimeout(() => {
+              pendingGRef.current = null;
+            }, GG_TIMEOUT_MS);
+            return;
+          }
+          if (pendingGRef.current) {
+            window.clearTimeout(pendingGRef.current);
+            pendingGRef.current = null;
+          }
+          if (isCapitalGKey(e)) {
+            e.preventDefault();
+            if (entryPaths.length > 0) {
+              const last = entryPaths[entryPaths.length - 1];
+              setSelectedPath(last);
+              requestAnimationFrame(() => scrollEntryIntoView(last));
+            }
+            return;
+          }
+        }
+      }
+
+      if (pendingGRef.current) {
+        window.clearTimeout(pendingGRef.current);
+        pendingGRef.current = null;
+      }
+
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
       const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
       const move = (next: number) => {
         const clamped = Math.max(0, Math.min(entryPaths.length - 1, next));
@@ -390,7 +505,8 @@ export const FileExplorer = memo(
         requestAnimationFrame(() => scrollEntryIntoView(path));
       };
 
-      switch (e.key) {
+      const key = vimNavigationEnabled && !e.shiftKey ? normalizeVimKey(e.key) : e.key;
+      switch (key) {
         case "ArrowDown":
           e.preventDefault();
           move(currentIdx < 0 ? 0 : currentIdx + 1);
@@ -400,13 +516,13 @@ export const FileExplorer = memo(
           move(currentIdx < 0 ? entryPaths.length - 1 : currentIdx - 1);
           break;
         case "ArrowRight": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
+          if (currentIdx < 0) break;
           const path = entryPaths[currentIdx];
           const idx = entryIndexByPath.get(path);
           if (idx === undefined) break;
           const row = rows[idx];
           if (row.kind !== "entry") break;
+          e.preventDefault();
           if (row.isDir) {
             if (!row.isExpanded) tree.toggle(row.path);
             else move(currentIdx + 1);
@@ -414,31 +530,37 @@ export const FileExplorer = memo(
           break;
         }
         case "ArrowLeft": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
+          if (currentIdx < 0) break;
           const path = entryPaths[currentIdx];
           const idx = entryIndexByPath.get(path);
           if (idx === undefined) break;
           const row = rows[idx];
           if (row.kind !== "entry") break;
           if (row.isDir && row.isExpanded) {
+            e.preventDefault();
             tree.toggle(row.path);
           } else {
             const parent = row.path.slice(0, row.path.lastIndexOf("/"));
-            if (parent && parent !== rootPath) setSelectedPath(parent);
+            if (parent && parent !== rootPath) {
+              e.preventDefault();
+              setSelectedPath(parent);
+            }
           }
           break;
         }
         case "Enter": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
+          if (currentIdx < 0) break;
           const path = entryPaths[currentIdx];
           const idx = entryIndexByPath.get(path);
           if (idx === undefined) break;
           const row = rows[idx];
           if (row.kind !== "entry") break;
+          e.preventDefault();
           if (row.isDir) tree.toggle(row.path);
-          else onOpenFile(row.path);
+          else {
+            onOpenFile(row.path);
+            onFileOpened?.();
+          }
           break;
         }
       }
@@ -487,6 +609,7 @@ export const FileExplorer = memo(
       <div
         ref={containerRef}
         className="flex h-full flex-col outline-none"
+        data-file-explorer=""
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -549,8 +672,14 @@ export const FileExplorer = memo(
           ref={searchRef}
           rootPath={rootPath}
           onOpenFile={onOpenFile}
+          onFileOpened={onFileOpened}
+          onToggleFolder={tree.toggle}
           open={isSearchOpen}
-          onRequestClose={() => setIsSearchOpen(false)}
+          onRequestClose={() => {
+            setIsSearchOpen(false);
+            requestAnimationFrame(() => containerRef.current?.focus());
+          }}
+          onFocusTree={() => containerRef.current?.focus()}
           onActiveChange={setIsSearchActive}
           onRevealInTerminal={onRevealInTerminal}
           onAttachToAgent={onAttachToAgent}
@@ -572,7 +701,16 @@ export const FileExplorer = memo(
                     "rounded-sm ring-1 ring-inset ring-primary/50",
                 )}
                 onPointerDown={dnd.onPointerDown}
-                onClickCapture={dnd.onClickCapture}
+                onClickCapture={(e) => {
+                  dnd.onClickCapture(e);
+                  if (
+                    vimNavigationEnabled &&
+                    containerRef.current &&
+                    document.activeElement !== containerRef.current
+                  ) {
+                    requestAnimationFrame(() => containerRef.current?.focus());
+                  }
+                }}
                 onContextMenuCapture={(e) => {
                   const el = (e.target as HTMLElement).closest<HTMLElement>(
                     "[data-fs-path]",

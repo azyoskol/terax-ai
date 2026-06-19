@@ -34,6 +34,7 @@ import {
   setTerminalScrollback,
   setTerminalWebglEnabled,
   setVimMode,
+  setVimNavigationEnabled,
   setZoomLevel,
 } from "@/modules/settings/store";
 import { useTheme } from "@/modules/theme";
@@ -72,6 +73,7 @@ export function GeneralSection() {
   const autostart = usePreferencesStore((s) => s.autostart);
   const restoreWindowState = usePreferencesStore((s) => s.restoreWindowState);
   const vimMode = usePreferencesStore((s) => s.vimMode);
+  const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
   const editorAutoSave = usePreferencesStore((s) => s.editorAutoSave);
   const editorAutoSaveDelay = usePreferencesStore((s) => s.editorAutoSaveDelay);
   const showHidden = usePreferencesStore((s) => s.showHidden);
@@ -170,6 +172,19 @@ export function GeneralSection() {
             onValueChange={(v) => void setZoomLevel(v[0] ?? 1)}
           />
         </div>
+      </div>
+
+      <div className="flex flex-col gap-2">
+        <Label>Navigation</Label>
+        <SettingRow
+          title="Vim-style navigation"
+          description="Enable Vim-like navigation for Explorer, workspace focus, and terminal prefix shortcuts."
+        >
+          <Switch
+            checked={vimNavigationEnabled}
+            onCheckedChange={(v) => void setVimNavigationEnabled(v)}
+          />
+        </SettingRow>
       </div>
 
       <div className="flex flex-col gap-2">

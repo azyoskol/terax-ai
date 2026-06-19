@@ -158,3 +158,180 @@ export function siblingLeafOf(
 export function hasLeaf(tree: PaneNode, id: PaneId): boolean {
   return leafIds(tree).includes(id);
 }
+
+export type Direction = "left" | "right" | "up" | "down";
+
+// Virtual rectangle for a leaf pane. Coordinates are in [0,1] unit space.
+export type PaneRect = {
+  id: PaneId;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+// Recursively computes virtual rectangles for all leaves.
+// Splits divide space equally among children (equal-weight assumption).
+// Actual panel sizes from react-resizable-panels are not available in PaneNode.
+function computeLeafRects(
+  node: PaneNode,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  out: PaneRect[],
+): void {
+  if (isLeaf(node)) {
+    out.push({ id: node.id, x, y, width, height });
+    return;
+  }
+  const n = node.children.length;
+  if (n === 0) return;
+  const share = 1 / n;
+  for (let i = 0; i < n; i++) {
+    const frac = i * share;
+    if (node.dir === "row") {
+      computeLeafRects(
+        node.children[i],
+        x + width * frac,
+        y,
+        width * share,
+        height,
+        out,
+      );
+    } else {
+      computeLeafRects(
+        node.children[i],
+        x,
+        y + height * frac,
+        width,
+        height * share,
+        out,
+      );
+    }
+  }
+}
+
+function leafRects(tree: PaneNode): PaneRect[] {
+  const rects: PaneRect[] = [];
+  computeLeafRects(tree, 0, 0, 1, 1, rects);
+  return rects;
+}
+
+function overlap(a: PaneRect, b: PaneRect, axis: "x" | "y"): number {
+  if (axis === "x") {
+    const lo = Math.max(a.x, b.x);
+    const hi = Math.min(a.x + a.width, b.x + b.width);
+    return Math.max(0, hi - lo);
+  }
+  const lo = Math.max(a.y, b.y);
+  const hi = Math.min(a.y + a.height, b.y + b.height);
+  return Math.max(0, hi - lo);
+}
+
+function centerDistance(a: PaneRect, b: PaneRect): number {
+  const ax = a.x + a.width / 2;
+  const ay = a.y + a.height / 2;
+  const bx = b.x + b.width / 2;
+  const by = b.y + b.height / 2;
+  return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2);
+}
+
+function axisDistance(a: PaneRect, b: PaneRect, direction: Direction): number {
+  switch (direction) {
+    case "right":
+      return b.x - (a.x + a.width);
+    case "left":
+      return a.x - (b.x + b.width);
+    case "down":
+      return b.y - (a.y + a.height);
+    case "up":
+      return a.y - (b.y + b.height);
+  }
+}
+
+function treeDistance(
+  tree: PaneNode,
+  fromId: PaneId,
+  toId: PaneId,
+): number {
+  function findPath(node: PaneNode, target: PaneId): PaneNode[] | null {
+    if (isLeaf(node)) return node.id === target ? [node] : null;
+    for (const c of node.children) {
+      const p = findPath(c, target);
+      if (p) return [node, ...p];
+    }
+    return null;
+  }
+  const pathA = findPath(tree, fromId);
+  const pathB = findPath(tree, toId);
+  if (!pathA || !pathB) return Infinity;
+  let common = 0;
+  while (common < pathA.length && common < pathB.length && pathA[common] === pathB[common]) {
+    common++;
+  }
+  return pathA.length + pathB.length - 2 * common;
+}
+
+export function findDirectionalPane(
+  tree: PaneNode,
+  currentId: PaneId,
+  direction: Direction,
+): PaneId {
+  const rects = leafRects(tree);
+  const current = rects.find((r) => r.id === currentId);
+  if (!current) return currentId;
+
+  const isHoriz = direction === "left" || direction === "right";
+  const perpAxis: "x" | "y" = isHoriz ? "y" : "x";
+
+  type Candidate = {
+    id: PaneId;
+    axisDist: number;
+    perpOverlap: number;
+    dist: number;
+    tdist: number;
+  };
+  const candidates: Candidate[] = [];
+
+  for (const r of rects) {
+    if (r.id === currentId) continue;
+
+    let strictlyInDir = false;
+    if (isHoriz) {
+      strictlyInDir =
+        direction === "right"
+          ? r.x >= current.x + current.width
+          : r.x + r.width <= current.x;
+    } else {
+      strictlyInDir =
+        direction === "down"
+          ? r.y >= current.y + current.height
+          : r.y + r.height <= current.y;
+    }
+    if (!strictlyInDir) continue;
+
+    candidates.push({
+      id: r.id,
+      axisDist: axisDistance(current, r, direction),
+      perpOverlap: overlap(current, r, perpAxis),
+      dist: centerDistance(current, r),
+      tdist: treeDistance(tree, currentId, r.id),
+    });
+  }
+
+  if (candidates.length === 0) return currentId;
+
+  candidates.sort((a, b) => {
+    if (a.axisDist !== b.axisDist) return a.axisDist - b.axisDist;
+    if (a.perpOverlap > 0 && b.perpOverlap > 0) {
+      return b.perpOverlap - a.perpOverlap;
+    }
+    if (a.perpOverlap > 0) return -1;
+    if (b.perpOverlap > 0) return 1;
+    if (a.dist !== b.dist) return a.dist - b.dist;
+    return a.tdist - b.tdist;
+  });
+
+  return candidates[0].id;
+}

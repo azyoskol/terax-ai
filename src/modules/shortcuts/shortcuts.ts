@@ -23,6 +23,10 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.focusLeft"
+  | "pane.focusRight"
+  | "pane.focusUp"
+  | "pane.focusDown"
   | "pane.source"
   | "terminal.clear"
   | "terminal.toggleInput"
@@ -40,7 +44,9 @@ export type ShortcutId =
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
-  | "editor.redo";
+  | "editor.redo"
+  | "workspace.focusExplorer"
+  | "workspace.focusEditor";
 
 export type ShortcutGroup =
   | "General"
@@ -148,7 +154,31 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
-  },  
+  },
+  {
+    id: "pane.focusLeft",
+    label: "Focus pane left",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowLeft" }],
+  },
+  {
+    id: "pane.focusRight",
+    label: "Focus pane right",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowRight" }],
+  },
+  {
+    id: "pane.focusUp",
+    label: "Focus pane up",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowUp" }],
+  },
+  {
+    id: "pane.focusDown",
+    label: "Focus pane down",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowDown" }],
+  },
   {
     id: "pane.source",
     label: "Toggle source panel",
@@ -312,6 +342,18 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Redo",
     group: "Editor",
     defaultBindings: [{ [MOD_PROP]: true, key: "y" }],
+  },
+  {
+    id: "workspace.focusExplorer",
+    label: "Focus file explorer (Vim)",
+    group: "View",
+    defaultBindings: [{ ctrl: true, key: "h" }],
+  },
+  {
+    id: "workspace.focusEditor",
+    label: "Focus editor (Vim)",
+    group: "View",
+    defaultBindings: [{ ctrl: true, key: "l" }],
   },
 ];
 

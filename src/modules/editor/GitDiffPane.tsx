@@ -5,7 +5,14 @@ import { unifiedMergeView } from "@codemirror/merge";
 import { EditorState } from "@codemirror/state";
 import { EditorView } from "@codemirror/view";
 import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  GG_TIMEOUT_MS,
+  isCapitalGKey,
+  isPendingGKey,
+  isPlainVimKey,
+} from "@/modules/explorer/lib/vimKeys";
 import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import {
   fetchCommitDiff,
@@ -124,8 +131,14 @@ function loadStateFromCache(
   };
 }
 
+const SCROLL_STEP = 60;
+
 export function GitDiffPane({ source, chipLabel, active }: Props) {
   const cmRef = useRef<ReactCodeMirrorRef>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const fallbackScrollRef = useRef<HTMLPreElement>(null);
+  const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
+  const pendingGRef = useRef<number | null>(null);
   const themeExt = useEditorThemeExt();
   const [state, setState] = useState<LoadState>(() =>
     active ? loadStateFromCache(source) : { kind: "idle" },
@@ -238,13 +251,123 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
     };
   }, [useFallback, path, initialLang, state.kind]);
 
+  useEffect(() => {
+    return () => {
+      if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+    };
+  }, []);
+
+  const scrollDiff = useCallback(
+    (direction: "down" | "up" | "top" | "bottom") => {
+      const view = cmRef.current?.view;
+      if (view) {
+        const { scrollTop, scrollHeight, clientHeight } = view.scrollDOM;
+        const maxScroll = scrollHeight - clientHeight;
+        switch (direction) {
+          case "down":
+            view.scrollDOM.scrollTop = Math.min(scrollTop + SCROLL_STEP, maxScroll);
+            break;
+          case "up":
+            view.scrollDOM.scrollTop = Math.max(scrollTop - SCROLL_STEP, 0);
+            break;
+          case "top":
+            view.scrollDOM.scrollTop = 0;
+            break;
+          case "bottom":
+            view.scrollDOM.scrollTop = maxScroll;
+            break;
+        }
+        return;
+      }
+      const fallback = fallbackScrollRef.current;
+      if (!fallback) return;
+      switch (direction) {
+        case "down":
+          fallback.scrollTop += SCROLL_STEP;
+          break;
+        case "up":
+          fallback.scrollTop -= SCROLL_STEP;
+          break;
+        case "top":
+          fallback.scrollTop = 0;
+          break;
+        case "bottom":
+          fallback.scrollTop = fallback.scrollHeight;
+          break;
+      }
+    },
+    [],
+  );
+
+  const handleDiffKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (!vimNavigationEnabled) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "TEXTAREA" ||
+          target.tagName === "INPUT" ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (!isPlainVimKey(e)) return;
+
+      if (pendingGRef.current && e.key === "g") {
+        e.preventDefault();
+        e.stopPropagation();
+        if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+        pendingGRef.current = null;
+        scrollDiff("top");
+        return;
+      }
+      if (pendingGRef.current) {
+        window.clearTimeout(pendingGRef.current);
+        pendingGRef.current = null;
+      }
+      if (isPendingGKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        pendingGRef.current = window.setTimeout(() => {
+          pendingGRef.current = null;
+        }, GG_TIMEOUT_MS);
+        return;
+      }
+      if (isCapitalGKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        scrollDiff("bottom");
+        return;
+      }
+      if (e.key === "j") {
+        e.preventDefault();
+        e.stopPropagation();
+        scrollDiff("down");
+        return;
+      }
+      if (e.key === "k") {
+        e.preventDefault();
+        e.stopPropagation();
+        scrollDiff("up");
+        return;
+      }
+    },
+    [vimNavigationEnabled, scrollDiff],
+  );
+
   const stats = useMemo(
     () => (useFallback ? countDiffLines(fallbackPatch) : { added: 0, removed: 0 }),
     [useFallback, fallbackPatch],
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col rounded-md border border-border/60 bg-background">
+    <div
+      ref={containerRef}
+      className="flex h-full min-h-0 flex-col rounded-md border border-border/60 bg-background outline-none"
+      data-source-control-diff=""
+      tabIndex={-1}
+      onKeyDown={handleDiffKeyDown}
+    >
       <div className="flex h-10 shrink-0 items-center justify-between gap-3 border-b border-border/60 px-3">
         <div className="flex min-w-0 items-center gap-2">
           <Badge
@@ -296,7 +419,10 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
           </div>
         ) : useFallback ? (
           <ScrollArea className="h-full">
-            <pre className="min-h-full whitespace-pre-wrap wrap-break-word p-4 font-mono text-[12px] leading-relaxed text-muted-foreground">
+            <pre
+              ref={fallbackScrollRef}
+              className="min-h-full whitespace-pre-wrap wrap-break-word p-4 font-mono text-[12px] leading-relaxed text-muted-foreground"
+            >
               {fallbackPatch || "Diff preview is not available for this file."}
             </pre>
           </ScrollArea>

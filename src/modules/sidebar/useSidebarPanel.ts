@@ -6,7 +6,7 @@ import {
   useState,
 } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import type { SidebarViewId } from "./types";
+import type { LastSidebarSurface, SidebarViewId } from "./types";
 
 export const SIDEBAR_DEFAULT_WIDTH = 260;
 export const SIDEBAR_MIN_WIDTH = 220;
@@ -45,6 +45,7 @@ function readSidebarView(): SidebarViewId {
 
 type FocusableExplorer = {
   focus: () => void;
+  focusBestSurface: () => void;
   isFocused: () => boolean;
 };
 
@@ -55,16 +56,26 @@ export function useSidebarPanel(
   const sidebarWidthRef = useRef(readSidebarWidth());
   const sidebarWidthWriteTimerRef = useRef(0);
   const explorerReturnFocusRef = useRef<HTMLElement | null>(null);
+  const lastSidebarSurfaceRef = useRef<LastSidebarSurface | null>(null);
   const [sidebarView, setSidebarViewState] =
     useState<SidebarViewId>(readSidebarView);
 
   const persistSidebarView = useCallback((view: SidebarViewId) => {
     setSidebarViewState(view);
+    if (view === "source-control") {
+      lastSidebarSurfaceRef.current = "sourceControlChanges";
+    } else {
+      lastSidebarSurfaceRef.current = "explorerTree";
+    }
     try {
       window.localStorage.setItem(SIDEBAR_VIEW_STORAGE_KEY, view);
     } catch {
       // storage may fail in private mode
     }
+  }, []);
+
+  const setLastSidebarSurface = useCallback((surface: LastSidebarSurface) => {
+    lastSidebarSurfaceRef.current = surface;
   }, []);
 
   const toggleSidebar = useCallback(() => {
@@ -147,14 +158,136 @@ export function useSidebarPanel(
     explorer.focus();
   }, [explorerRef, persistSidebarView, sidebarView]);
 
+  const focusExplorer = useCallback(() => {
+    const panel = sidebarRef.current;
+    const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
+    const active = document.activeElement;
+    explorerReturnFocusRef.current =
+      active instanceof HTMLElement && active !== document.body
+        ? active
+        : null;
+    if (collapsed) {
+      panel?.resize(`${sidebarWidthRef.current}px`);
+    }
+    if (active instanceof HTMLElement) {
+      if (active.closest?.("[data-source-control]")) {
+        lastSidebarSurfaceRef.current = "sourceControlChanges";
+      } else if (active.closest?.("[data-file-explorer-search-results]")) {
+        lastSidebarSurfaceRef.current = "explorerSearchResults";
+      } else if (active.closest?.("[data-file-explorer-search]")) {
+        lastSidebarSurfaceRef.current = "explorerSearch";
+      } else if (active.closest?.("[data-file-explorer]")) {
+        lastSidebarSurfaceRef.current = "explorerTree";
+      }
+    }
+    const last = lastSidebarSurfaceRef.current;
+    if (last === "sourceControlChanges") {
+      const scmContainer = document.querySelector<HTMLElement>(
+        "[data-source-control]",
+      );
+      if (scmContainer) {
+        if (sidebarView !== "source-control") {
+          persistSidebarView("source-control");
+        }
+        requestAnimationFrame(() => {
+          scmContainer.focus();
+          const changesList = scmContainer.querySelector<HTMLElement>(
+            "[data-source-control-changes]",
+          );
+          changesList?.focus();
+        });
+        return;
+      }
+    }
+    if (last === "explorerSearchResults") {
+      if (sidebarView !== "explorer") {
+        persistSidebarView("explorer");
+      }
+      requestAnimationFrame(() => {
+        const results = document.querySelector<HTMLElement>(
+          "[data-file-explorer-search-results]",
+        );
+        if (results) {
+          results.focus();
+        } else {
+          explorerRef.current?.focusBestSurface();
+        }
+      });
+      return;
+    }
+    if (last === "explorerSearch") {
+      if (sidebarView !== "explorer") {
+        persistSidebarView("explorer");
+      }
+      requestAnimationFrame(() => {
+        const searchInput = document.querySelector<HTMLElement>(
+          "[data-file-explorer-search]",
+        );
+        if (searchInput) {
+          searchInput.focus();
+        } else {
+          explorerRef.current?.focusBestSurface();
+        }
+      });
+      return;
+    }
+    if (sidebarView !== "explorer") {
+      persistSidebarView("explorer");
+      requestAnimationFrame(() => explorerRef.current?.focusBestSurface());
+      return;
+    }
+    explorerRef.current?.focusBestSurface();
+  }, [explorerRef, persistSidebarView, sidebarView]);
+
+  const restoreEditorFocus = useCallback(() => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement) {
+      if (active.closest?.("[data-source-control]")) {
+        lastSidebarSurfaceRef.current = "sourceControlChanges";
+      } else if (active.closest?.("[data-file-explorer-search-results]")) {
+        lastSidebarSurfaceRef.current = "explorerSearchResults";
+      } else if (active.closest?.("[data-file-explorer-search]")) {
+        lastSidebarSurfaceRef.current = "explorerSearch";
+      } else if (active.closest?.("[data-file-explorer]")) {
+        lastSidebarSurfaceRef.current = "explorerTree";
+      }
+    }
+    const target = explorerReturnFocusRef.current;
+    explorerReturnFocusRef.current = null;
+    if (target?.isConnected) {
+      target.focus();
+      return;
+    }
+    const workspace = document.getElementById("workspace");
+    const diffView = workspace?.querySelector<HTMLElement>(
+      "[data-source-control-diff]",
+    );
+    if (diffView) {
+      diffView.focus();
+      return;
+    }
+    const cmEditor = workspace?.querySelector<HTMLElement>(".cm-editor");
+    if (cmEditor) {
+      cmEditor.focus();
+      return;
+    }
+    const focusable = workspace?.querySelector<HTMLElement>(
+      "[data-editor], [tabindex]",
+    );
+    focusable?.focus();
+  }, []);
+
   return {
     sidebarRef,
     sidebarWidthRef,
     sidebarView,
     persistSidebarView,
+    setLastSidebarSurface,
     toggleSidebar,
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
+    focusExplorer,
+    restoreEditorFocus,
   };
 }

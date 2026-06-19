@@ -59,6 +59,7 @@ import {
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import {
+  BufferTabPicker,
   TabSwitcherHud,
   useTabs,
   useTabSwitcher,
@@ -132,6 +133,7 @@ export default function App() {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    focusDirectionalPaneInTab,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
@@ -158,6 +160,7 @@ export default function App() {
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
+  const activeEditorHandleRef = useRef<EditorPaneHandle | null>(null);
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
@@ -265,6 +268,8 @@ export default function App() {
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
+    focusExplorer,
+    restoreEditorFocus,
   } = useSidebarPanel(explorerRef);
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
@@ -315,6 +320,10 @@ export default function App() {
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
   }, [activeId, activeLeafId]);
+
+  useEffect(() => {
+    activeEditorHandleRef.current = activeEditorHandle;
+  }, [activeEditorHandle]);
 
   const handleSearchReady = useCallback(
     (leafId: number, addon: SearchAddon) => {
@@ -525,6 +534,21 @@ export default function App() {
     [openFileTab, newMarkdownTab],
   );
 
+  const handleFileOpened = useCallback(() => {
+    let attempts = 0;
+    const tryFocus = () => {
+      activeEditorHandleRef.current?.focus();
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLElement &&
+        (el.closest(".cm-editor") || el.closest("[data-editor]"))
+      )
+        return;
+      if (++attempts < 15) requestAnimationFrame(tryFocus);
+    };
+    requestAnimationFrame(tryFocus);
+  }, []);
+
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
       for (const t of tabs) {
@@ -589,6 +613,55 @@ export default function App() {
     (s) => s.explorerGitDecorations,
   );
 
+  const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
+  const [terminalPrefixActive, setTerminalPrefixActive] = useState(false);
+  const terminalPrefixRef = useRef(false);
+  const [bufferPickerOpen, setBufferPickerOpen] = useState(false);
+
+  useEffect(() => {
+    if (!vimNavigationEnabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = (e.target as HTMLElement | null) ?? document.activeElement;
+      const inTerminal = !!(target as HTMLElement | null)?.closest?.(".xterm");
+
+      if (e.ctrlKey && e.code === "Space" && !e.shiftKey && !e.altKey && !e.metaKey) {
+        if (!inTerminal) return;
+        e.preventDefault();
+        e.stopPropagation();
+        terminalPrefixRef.current = true;
+        setTerminalPrefixActive(true);
+        return;
+      }
+
+      if (terminalPrefixRef.current) {
+        terminalPrefixRef.current = false;
+        setTerminalPrefixActive(false);
+        let handled = true;
+        switch (e.key) {
+          case "h": focusDirectionalPaneInTab(activeId, "left"); break;
+          case "l": focusDirectionalPaneInTab(activeId, "right"); break;
+          case "j": focusDirectionalPaneInTab(activeId, "down"); break;
+          case "k": focusDirectionalPaneInTab(activeId, "up"); break;
+          case "e": focusExplorer(); break;
+          case "b": setBufferPickerOpen(true); break;
+          case "s": setSwitcherOpen(true); break;
+          case "q":
+          case "Escape": break;
+          // t/T deferred: direct tab switching from prefix not yet safe
+          // case "t": stepSwitcher(1); break;
+          // case "T": stepSwitcher(-1); break;
+          default: handled = false; break;
+        }
+        if (handled) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer, setSwitcherOpen]);
   const openPreviewTab = useCallback(
     (url: string) => {
       const id = newPreviewTab(url);
@@ -632,7 +705,7 @@ export default function App() {
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
       "tab.close": handleCloseTabOrPane,
-      "tab.next": () => stepSwitcher(1),
+      "tab.next": () => setBufferPickerOpen(true),
       "tab.prev": () => stepSwitcher(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
       "space.next": () => cycleSpace(1),
@@ -642,6 +715,10 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
+      "pane.focusLeft": () => focusDirectionalPaneInTab(activeId, "left"),
+      "pane.focusRight": () => focusDirectionalPaneInTab(activeId, "right"),
+      "pane.focusUp": () => focusDirectionalPaneInTab(activeId, "up"),
+      "pane.focusDown": () => focusDirectionalPaneInTab(activeId, "down"),
       "pane.source": toggleSourceControl,
       "terminal.clear": () => {
         clearFocusedTerminal();
@@ -656,6 +733,8 @@ export default function App() {
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
+      "workspace.focusExplorer": focusExplorer,
+      "workspace.focusEditor": restoreEditorFocus,
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
@@ -676,11 +755,14 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      focusDirectionalPaneInTab,
       toggleSourceControl,
       togglePanelAndFocus,
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
+      focusExplorer,
+      restoreEditorFocus,
       zoomIn,
       zoomOut,
       zoomReset,
@@ -689,6 +771,7 @@ export default function App() {
 
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
+      if (switcherOpen) return true;
       if (id === "editor.undo" || id === "editor.redo") {
         return activeTab?.kind !== "editor";
       }
@@ -698,9 +781,15 @@ export default function App() {
         const inTerminal = !!(target as HTMLElement | null)?.closest?.(
           ".xterm",
         );
-        if (!inTerminal) return false;
-        const sel = captureActiveSelection();
-        return !sel || !sel.trim();
+        if (inTerminal) {
+          const sel = captureActiveSelection();
+          return !sel || !sel.trim();
+        }
+        const inExplorerSearch = !!(target as HTMLElement | null)?.closest?.(
+          "[data-file-explorer-search]",
+        );
+        if (inExplorerSearch) return true;
+        return false;
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key
@@ -729,9 +818,61 @@ export default function App() {
         // is the always-on toggle and is never claimed by the terminal.
         return inTerminal && !e.shiftKey;
       }
+      if (id === "tab.next") {
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
+          ".xterm",
+        );
+        if (inTerminal) return true;
+        return false;
+      }
+      if (
+        id === "workspace.focusExplorer" ||
+        id === "workspace.focusEditor"
+      ) {
+        if (!vimNavigationEnabled) return true;
+        const target = (e.target as HTMLElement | null) ?? document.activeElement;
+        if ((target as HTMLElement | null)?.closest?.(".xterm, [data-terminal]")) return true;
+        if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return true;
+        const inExplorerSearchResults = !!(target as HTMLElement | null)?.closest?.(
+          "[data-file-explorer-search-results]",
+        );
+        if (inExplorerSearchResults) {
+          if (id === "workspace.focusEditor" && e.ctrlKey && e.key.toLowerCase() === "l") {
+            const searchInput = document.querySelector<HTMLElement>(
+              "[data-file-explorer-search]",
+            );
+            if (searchInput) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              searchInput.focus();
+            }
+          }
+          return true;
+        }
+        const inExplorerSearch = !!(target as HTMLElement | null)?.closest?.(
+          "[data-file-explorer-search]",
+        );
+        if (inExplorerSearch) return true;
+        const inSourceControl = !!(target as HTMLElement | null)?.closest?.(
+          "[data-source-control]",
+        );
+        if (id === "workspace.focusExplorer") {
+          const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
+          if (inExplorer || inSourceControl) return true;
+          return false;
+        }
+        if (id === "workspace.focusEditor") {
+          const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
+          if (!inExplorer && !inSourceControl) return true;
+          return false;
+        }
+        return false;
+      }
       return false;
     },
-    [activeTab],
+    [activeTab, vimNavigationEnabled, switcherOpen],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
@@ -931,6 +1072,18 @@ export default function App() {
     [setActiveId],
   );
 
+  const handleBufferActivate = useCallback(
+    (tabId: number) => {
+      const t = tabsRef.current.find((x) => x.id === tabId);
+      if (!t) return;
+      setActiveId(tabId);
+      useSpaces.getState().setActive(t.spaceId);
+      setBufferPickerOpen(false);
+      requestAnimationFrame(() => restoreEditorFocus());
+    },
+    [setActiveId, restoreEditorFocus],
+  );
+
   const spaceSwitcher = (
     <SpaceSwitcher
       open={switcherOpen}
@@ -1096,6 +1249,7 @@ export default function App() {
                         }
                         activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
+                        onFileOpened={handleFileOpened}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}
@@ -1172,6 +1326,7 @@ export default function App() {
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true
               }
+              terminalPrefixActive={terminalPrefixActive}
             />
           )}
 
@@ -1208,6 +1363,14 @@ export default function App() {
           {switcherState && (
             <TabSwitcherHud tabs={spaceTabs} state={switcherState} />
           )}
+
+          <BufferTabPicker
+            open={bufferPickerOpen}
+            tabs={spaceTabs}
+            activeId={activeId}
+            onActivate={handleBufferActivate}
+            onClose={() => setBufferPickerOpen(false)}
+          />
 
           <CommandPalette
             open={commandPaletteOpen}

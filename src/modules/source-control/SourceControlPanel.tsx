@@ -63,6 +63,13 @@ import {
   type KeyboardEvent,
   type ReactNode,
 } from "react";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  GG_TIMEOUT_MS,
+  isCapitalGKey,
+  isPendingGKey,
+  isPlainVimKey,
+} from "@/modules/explorer/lib/vimKeys";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
   useSourceControlPanel,
@@ -151,16 +158,22 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   onOpenFile,
 }: Props) {
   const scm = useSourceControlPanel(open, sourceControl, onOpenDiff);
+  const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
   const refreshAnimationRef = useRef<number | null>(null);
   const [refreshAnimating, setRefreshAnimating] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const commitInputRef = useRef<HTMLTextAreaElement>(null);
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
+  const pendingGRef = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       if (refreshAnimationRef.current) {
         window.clearTimeout(refreshAnimationRef.current);
+      }
+      if (pendingGRef.current) {
+        window.clearTimeout(pendingGRef.current);
       }
     };
   }, []);
@@ -349,6 +362,50 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     return row && row.kind === "entry" ? row.entry : null;
   }, [focusedRowKey, rowKeyToIndex, rows]);
 
+  const focusFirstChange = useCallback(() => {
+    if (focusableIndices.length === 0) return;
+    const targetRowIndex = focusableIndices[0];
+    const target = rows[targetRowIndex];
+    if (!target) return;
+    setFocusedRowKey(target.key);
+    virtualizer.scrollToIndex(targetRowIndex, { align: "auto" });
+  }, [focusableIndices, rows, virtualizer]);
+
+  const focusLastChange = useCallback(() => {
+    if (focusableIndices.length === 0) return;
+    const targetRowIndex = focusableIndices[focusableIndices.length - 1];
+    const target = rows[targetRowIndex];
+    if (!target) return;
+    setFocusedRowKey(target.key);
+    virtualizer.scrollToIndex(targetRowIndex, { align: "auto" });
+  }, [focusableIndices, rows, virtualizer]);
+
+  const focusCommitInput = useCallback(() => {
+    commitInputRef.current?.focus();
+  }, []);
+
+  const focusDiffOrEditor = useCallback(() => {
+    requestAnimationFrame(() => {
+      const diffView = document.querySelector<HTMLElement>(
+        "[data-source-control-diff]",
+      );
+      if (diffView) {
+        diffView.focus();
+        return;
+      }
+      const workspace = document.getElementById("workspace");
+      const cmEditor = workspace?.querySelector<HTMLElement>(".cm-editor");
+      cmEditor?.focus();
+    });
+  }, []);
+
+  const clearPendingG = useCallback(() => {
+    if (pendingGRef.current) {
+      window.clearTimeout(pendingGRef.current);
+      pendingGRef.current = null;
+    }
+  }, []);
+
   const handlePanelKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement | null;
@@ -356,7 +413,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         target &&
         (target.tagName === "TEXTAREA" ||
           target.tagName === "INPUT" ||
-          target.closest("button"))
+          target.isContentEditable)
       ) {
         return;
       }
@@ -366,6 +423,72 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         handleRefresh();
         return;
       }
+
+      if (vimNavigationEnabled && isPlainVimKey(event)) {
+        if (pendingGRef.current && event.key === "g") {
+          event.preventDefault();
+          clearPendingG();
+          focusFirstChange();
+          return;
+        }
+        if (pendingGRef.current) {
+          clearPendingG();
+        }
+        if (isPendingGKey(event)) {
+          event.preventDefault();
+          pendingGRef.current = window.setTimeout(() => {
+            pendingGRef.current = null;
+          }, GG_TIMEOUT_MS);
+          return;
+        }
+        if (isCapitalGKey(event)) {
+          event.preventDefault();
+          focusLastChange();
+          return;
+        }
+        if (event.key === "r" || event.key === "R") {
+          event.preventDefault();
+          handleRefresh();
+          return;
+        }
+        if (event.key === "c") {
+          event.preventDefault();
+          focusCommitInput();
+          return;
+        }
+        if (event.key === "j") {
+          event.preventDefault();
+          moveFocus(1);
+          return;
+        }
+        if (event.key === "k") {
+          event.preventDefault();
+          moveFocus(-1);
+          return;
+        }
+        if (event.key === "l") {
+          const entry = focusedEntry();
+          if (entry) {
+            event.preventDefault();
+            void scm.selectFile(entry);
+            focusDiffOrEditor();
+          }
+          return;
+        }
+        if (event.key === " ") {
+          const entry = focusedEntry();
+          if (entry) {
+            event.preventDefault();
+            void scm.toggleStageFile(entry);
+          }
+          return;
+        }
+      }
+
+      if (pendingGRef.current) {
+        clearPendingG();
+      }
+
       switch (event.key) {
         case "ArrowDown":
           event.preventDefault();
@@ -380,6 +503,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           if (entry) {
             event.preventDefault();
             void scm.selectFile(entry);
+            focusDiffOrEditor();
           }
           break;
         }
@@ -406,7 +530,18 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         }
       }
     },
-    [focusedEntry, handleRefresh, moveFocus, scm],
+    [
+      vimNavigationEnabled,
+      focusedEntry,
+      handleRefresh,
+      moveFocus,
+      scm,
+      focusFirstChange,
+      focusLastChange,
+      focusCommitInput,
+      focusDiffOrEditor,
+      clearPendingG,
+    ],
   );
 
   if (!open) return null;
@@ -416,7 +551,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
   return (
     <TooltipProvider delayDuration={800} skipDelayDuration={300}>
-      <aside className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style]">
+      <aside
+        className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style] outline-none"
+        data-source-control=""
+        tabIndex={0}
+      >
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3 pb-2.5 pt-3">
           <div className="flex min-w-0 items-center gap-1.5">
             <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10">
@@ -579,9 +718,19 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 )}
               >
                 <Textarea
+                  ref={commitInputRef}
                   value={scm.commitMessage}
                   onChange={(event) => scm.setCommitMessage(event.target.value)}
-                  onKeyDown={handleCommitShortcut}
+                  onKeyDown={(e) => {
+                    if (vimNavigationEnabled && e.key === "Escape") {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      containerRef.current?.focus();
+                      return;
+                    }
+                    handleCommitShortcut(e);
+                  }}
+                  data-source-control-commit-message=""
                   placeholder="Commit message"
                   rows={3}
                   className={cn(
@@ -717,6 +866,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                   focusedRowKey ? `scm-row-${focusedRowKey}` : undefined
                 }
                 onKeyDown={handlePanelKeyDown}
+                data-source-control-changes=""
                 className="relative min-h-0 flex-1 outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
               >
                 <div
@@ -956,11 +1106,13 @@ const EntryRow = memo(function EntryRow({
       <ContextMenuTrigger asChild>
         <div
           id={`scm-row-${row.key}`}
+          data-source-control-change-row=""
           data-focused={focused || undefined}
           data-selected={isSelected || undefined}
           role="option"
           aria-selected={isSelected}
           onMouseDown={() => onFocusRow(row.key)}
+          onFocus={() => onFocusRow(row.key)}
           className={cn(
             "group relative flex h-[30px] items-center gap-2 rounded-md pl-2 pr-2 transition-all duration-100",
             focused

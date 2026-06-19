@@ -12,10 +12,12 @@ export {
 } from "./lib/useTerminalSession";
 export { useTerminalFileDrop } from "./lib/useTerminalFileDrop";
 export {
+  findDirectionalPane,
   findLeafCwd,
   hasLeaf,
   isLeaf,
   leafIds,
+  type Direction,
   type PaneId,
   type PaneNode,
   type SplitDir,
