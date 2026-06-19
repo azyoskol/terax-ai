@@ -23,6 +23,10 @@ export type ShortcutId =
   | "pane.splitDown"
   | "pane.focusNext"
   | "pane.focusPrev"
+  | "pane.focusLeft"
+  | "pane.focusRight"
+  | "pane.focusUp"
+  | "pane.focusDown"
   | "pane.source"
   | "terminal.clear"
   | "terminal.toggleInput"
@@ -148,7 +152,31 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus previous pane",
     group: "Panes",
     defaultBindings: [{ [MOD_PROP]: true, key: "[" }],
-  },  
+  },
+  {
+    id: "pane.focusLeft",
+    label: "Focus pane left",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowLeft" }],
+  },
+  {
+    id: "pane.focusRight",
+    label: "Focus pane right",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowRight" }],
+  },
+  {
+    id: "pane.focusUp",
+    label: "Focus pane up",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowUp" }],
+  },
+  {
+    id: "pane.focusDown",
+    label: "Focus pane down",
+    group: "Panes",
+    defaultBindings: [{ alt: true, key: "ArrowDown" }],
+  },
   {
     id: "pane.source",
     label: "Toggle source panel",

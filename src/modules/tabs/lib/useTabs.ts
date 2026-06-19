@@ -1,9 +1,11 @@
 import { isMarkdownPath } from "@/lib/utils";
 import {
+  findDirectionalPane,
   findLeafCwd,
   hasLeaf,
   leafIds,
   nextLeafId,
+  type Direction,
   type PaneNode,
   removeLeaf,
   type SplitDir,
@@ -986,6 +988,21 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     );
   }, []);
 
+  const focusDirectionalPaneInTab = useCallback(
+    (tabId: number, direction: Direction) => {
+      setTabs((curr) =>
+        curr.map((t) => {
+          if (t.id !== tabId || t.kind !== "terminal") return t;
+          const next = findDirectionalPane(t.paneTree, t.activeLeafId, direction);
+          if (next === t.activeLeafId) return t;
+          const cwd = findLeafCwd(t.paneTree, next);
+          return { ...t, activeLeafId: next, ...(cwd !== undefined && { cwd }) };
+        }),
+      );
+    },
+    [],
+  );
+
   /** Split the active leaf of `tabId` along `dir`. Returns the new leaf id. */
   const splitActivePane = useCallback(
     (tabId: number, dir: SplitDir): number | null => {
@@ -1138,6 +1155,7 @@ export function useTabs(initial?: Partial<TerminalTab>) {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    focusDirectionalPaneInTab,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,

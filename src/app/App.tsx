@@ -132,6 +132,7 @@ export default function App() {
     setLeafCwd,
     focusPane,
     focusNextPaneInTab,
+    focusDirectionalPaneInTab,
     splitActivePane,
     closeActivePane,
     closePaneByLeaf,
@@ -642,6 +643,10 @@ export default function App() {
       "pane.splitDown": () => splitActivePaneInActiveTab("col"),
       "pane.focusNext": () => focusNextPaneInTab(activeId, 1),
       "pane.focusPrev": () => focusNextPaneInTab(activeId, -1),
+      "pane.focusLeft": () => focusDirectionalPaneInTab(activeId, "left"),
+      "pane.focusRight": () => focusDirectionalPaneInTab(activeId, "right"),
+      "pane.focusUp": () => focusDirectionalPaneInTab(activeId, "up"),
+      "pane.focusDown": () => focusDirectionalPaneInTab(activeId, "down"),
       "pane.source": toggleSourceControl,
       "terminal.clear": () => {
         clearFocusedTerminal();
@@ -676,6 +681,7 @@ export default function App() {
       selectByIndex,
       splitActivePaneInActiveTab,
       focusNextPaneInTab,
+      focusDirectionalPaneInTab,
       toggleSourceControl,
       togglePanelAndFocus,
       askFromSelection,

@@ -100,6 +100,21 @@ function parentOf(path: string, fallback: string): string {
   return i > 0 ? path.slice(0, i) : fallback;
 }
 
+function normalizeVimKey(key: string): string {
+  switch (key) {
+    case "h":
+      return "ArrowLeft";
+    case "j":
+      return "ArrowDown";
+    case "k":
+      return "ArrowUp";
+    case "l":
+      return "ArrowRight";
+    default:
+      return key;
+  }
+}
+
 function buildRows(
   rootPath: string,
   tree: ReturnType<typeof useFileTree>,
@@ -196,6 +211,7 @@ export const FileExplorer = memo(
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
     const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
+    const vimMode = usePreferencesStore((s) => s.vimMode);
     const { lookup: lookupGitStatus } = useGitStatus(
       rootPath,
       gitDecorations ? gitStatus : null,
@@ -390,7 +406,8 @@ export const FileExplorer = memo(
         requestAnimationFrame(() => scrollEntryIntoView(path));
       };
 
-      switch (e.key) {
+      const key = vimMode ? normalizeVimKey(e.key) : e.key;
+      switch (key) {
         case "ArrowDown":
           e.preventDefault();
           move(currentIdx < 0 ? 0 : currentIdx + 1);
