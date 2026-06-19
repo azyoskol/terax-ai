@@ -29,7 +29,13 @@ import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { EntryRow, PendingRow, StatusRow, type RowActions } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
-import { normalizeVimKey } from "./lib/vimKeys";
+import {
+  GG_TIMEOUT_MS,
+  isCapitalGKey,
+  isPendingGKey,
+  isPlainVimKey,
+  normalizeVimKey,
+} from "./lib/vimKeys";
 import {
   copyToClipboard,
   relativePath,
@@ -213,6 +219,7 @@ export const FileExplorer = memo(
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const pendingVimCreateRef = useRef(false);
+    const pendingGRef = useRef<number | null>(null);
 
     const { rows, entryIndexByPath } = useMemo(() => {
       if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
@@ -361,6 +368,13 @@ export const FileExplorer = memo(
     );
 
     useEffect(() => {
+      return () => {
+        if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+      };
+    }, []);
+
+
+    useEffect(() => {
       if (!pendingVimCreateRef.current) return;
       if (tree.pendingCreate !== null) return;
       pendingVimCreateRef.current = false;
@@ -424,7 +438,7 @@ export const FileExplorer = memo(
           if (isSearchOpen) searchRef.current?.focus();
           return;
         }
-        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (isPlainVimKey(e)) {
           if (e.key === "a" || e.key === "A") {
             const targetDir = (() => {
               if (!selectedPath) return rootPath;
@@ -441,7 +455,44 @@ export const FileExplorer = memo(
             tree.refresh(rootPath);
             return;
           }
+          if (pendingGRef.current && e.key === "g") {
+            e.preventDefault();
+            if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+            pendingGRef.current = null;
+            if (entryPaths.length > 0) {
+              const first = entryPaths[0];
+              setSelectedPath(first);
+              requestAnimationFrame(() => scrollEntryIntoView(first));
+            }
+            return;
+          }
+          if (isPendingGKey(e)) {
+            e.preventDefault();
+            if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+            pendingGRef.current = window.setTimeout(() => {
+              pendingGRef.current = null;
+            }, GG_TIMEOUT_MS);
+            return;
+          }
+          if (pendingGRef.current) {
+            window.clearTimeout(pendingGRef.current);
+            pendingGRef.current = null;
+          }
+          if (isCapitalGKey(e)) {
+            e.preventDefault();
+            if (entryPaths.length > 0) {
+              const last = entryPaths[entryPaths.length - 1];
+              setSelectedPath(last);
+              requestAnimationFrame(() => scrollEntryIntoView(last));
+            }
+            return;
+          }
         }
+      }
+
+      if (pendingGRef.current) {
+        window.clearTimeout(pendingGRef.current);
+        pendingGRef.current = null;
       }
 
       if (e.ctrlKey || e.altKey || e.metaKey) return;
@@ -650,7 +701,16 @@ export const FileExplorer = memo(
                     "rounded-sm ring-1 ring-inset ring-primary/50",
                 )}
                 onPointerDown={dnd.onPointerDown}
-                onClickCapture={dnd.onClickCapture}
+                onClickCapture={(e) => {
+                  dnd.onClickCapture(e);
+                  if (
+                    vimNavigationEnabled &&
+                    containerRef.current &&
+                    document.activeElement !== containerRef.current
+                  ) {
+                    requestAnimationFrame(() => containerRef.current?.focus());
+                  }
+                }}
                 onContextMenuCapture={(e) => {
                   const el = (e.target as HTMLElement).closest<HTMLElement>(
                     "[data-fs-path]",
