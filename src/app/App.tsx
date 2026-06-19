@@ -59,6 +59,7 @@ import {
 } from "@/modules/source-control";
 import { StatusBar } from "@/modules/statusbar";
 import {
+  BufferTabPicker,
   TabSwitcherHud,
   useTabs,
   useTabSwitcher,
@@ -615,6 +616,7 @@ export default function App() {
   const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
   const [terminalPrefixActive, setTerminalPrefixActive] = useState(false);
   const terminalPrefixRef = useRef(false);
+  const [bufferPickerOpen, setBufferPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!vimNavigationEnabled) return;
@@ -632,23 +634,34 @@ export default function App() {
       }
 
       if (terminalPrefixRef.current) {
+        terminalPrefixRef.current = false;
+        setTerminalPrefixActive(false);
+        let handled = true;
         switch (e.key) {
           case "h": focusDirectionalPaneInTab(activeId, "left"); break;
           case "l": focusDirectionalPaneInTab(activeId, "right"); break;
           case "j": focusDirectionalPaneInTab(activeId, "down"); break;
           case "k": focusDirectionalPaneInTab(activeId, "up"); break;
           case "e": focusExplorer(); break;
+          case "b": setBufferPickerOpen(true); break;
+          case "s": setSwitcherOpen(true); break;
+          case "q":
+          case "Escape": break;
+          // t/T deferred: direct tab switching from prefix not yet safe
+          // case "t": stepSwitcher(1); break;
+          // case "T": stepSwitcher(-1); break;
+          default: handled = false; break;
         }
-        terminalPrefixRef.current = false;
-        setTerminalPrefixActive(false);
-        e.preventDefault();
-        e.stopPropagation();
+        if (handled) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
         return;
       }
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer]);
+  }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer, setSwitcherOpen]);
   const openPreviewTab = useCallback(
     (url: string) => {
       const id = newPreviewTab(url);
@@ -692,7 +705,7 @@ export default function App() {
       "tab.newPreview": () => openPreviewTab(""),
       "tab.newEditor": () => setNewEditorOpen(true),
       "tab.close": handleCloseTabOrPane,
-      "tab.next": () => stepSwitcher(1),
+      "tab.next": () => setBufferPickerOpen(true),
       "tab.prev": () => stepSwitcher(-1),
       "tab.selectByIndex": (e) => selectByIndex(parseInt(e.key, 10) - 1),
       "space.next": () => cycleSpace(1),
@@ -758,6 +771,7 @@ export default function App() {
 
   const shortcutsDisabled = useCallback(
     (id: ShortcutId, e: KeyboardEvent) => {
+      if (switcherOpen) return true;
       if (id === "editor.undo" || id === "editor.redo") {
         return activeTab?.kind !== "editor";
       }
@@ -804,6 +818,15 @@ export default function App() {
         // is the always-on toggle and is never claimed by the terminal.
         return inTerminal && !e.shiftKey;
       }
+      if (id === "tab.next") {
+        const target =
+          (e.target as HTMLElement | null) ?? document.activeElement;
+        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
+          ".xterm",
+        );
+        if (inTerminal) return true;
+        return false;
+      }
       if (
         id === "workspace.focusExplorer" ||
         id === "workspace.focusEditor"
@@ -832,21 +855,24 @@ export default function App() {
           "[data-file-explorer-search]",
         );
         if (inExplorerSearch) return true;
+        const inSourceControl = !!(target as HTMLElement | null)?.closest?.(
+          "[data-source-control]",
+        );
         if (id === "workspace.focusExplorer") {
           const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
-          if (inExplorer) return true;
+          if (inExplorer || inSourceControl) return true;
           return false;
         }
         if (id === "workspace.focusEditor") {
           const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
-          if (!inExplorer) return true;
+          if (!inExplorer && !inSourceControl) return true;
           return false;
         }
         return false;
       }
       return false;
     },
-    [activeTab, vimNavigationEnabled],
+    [activeTab, vimNavigationEnabled, switcherOpen],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
@@ -1044,6 +1070,18 @@ export default function App() {
       setSwitcherOpen(false);
     },
     [setActiveId],
+  );
+
+  const handleBufferActivate = useCallback(
+    (tabId: number) => {
+      const t = tabsRef.current.find((x) => x.id === tabId);
+      if (!t) return;
+      setActiveId(tabId);
+      useSpaces.getState().setActive(t.spaceId);
+      setBufferPickerOpen(false);
+      requestAnimationFrame(() => restoreEditorFocus());
+    },
+    [setActiveId, restoreEditorFocus],
   );
 
   const spaceSwitcher = (
@@ -1325,6 +1363,14 @@ export default function App() {
           {switcherState && (
             <TabSwitcherHud tabs={spaceTabs} state={switcherState} />
           )}
+
+          <BufferTabPicker
+            open={bufferPickerOpen}
+            tabs={spaceTabs}
+            activeId={activeId}
+            onActivate={handleBufferActivate}
+            onClose={() => setBufferPickerOpen(false)}
+          />
 
           <CommandPalette
             open={commandPaletteOpen}

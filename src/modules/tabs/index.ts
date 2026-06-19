@@ -1,3 +1,4 @@
+export { BufferTabPicker } from "./BufferTabPicker";
 export { TabBar, TabIcon } from "./TabBar";
 export { TabSwitcherHud } from "./TabSwitcherHud";
 export {
