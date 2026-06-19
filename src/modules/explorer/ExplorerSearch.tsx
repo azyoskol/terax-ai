@@ -23,6 +23,12 @@ import {
   useState,
 } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
+import {
+  GG_TIMEOUT_MS,
+  isCapitalGKey,
+  isPendingGKey,
+  isPlainVimKey,
+} from "./lib/vimKeys";
 import { fileIconUrl } from "./lib/iconResolver";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
@@ -46,8 +52,11 @@ const DEBOUNCE_MS = 300;
 type Props = {
   rootPath: string;
   onOpenFile: (path: string) => void;
+  onFileOpened?: () => void;
+  onToggleFolder?: (path: string) => void;
   open: boolean;
   onRequestClose: () => void;
+  onFocusTree?: () => void;
   onActiveChange?: (active: boolean) => void;
   onRevealInTerminal?: (path: string) => void;
   onAttachToAgent?: (path: string) => void;
@@ -56,13 +65,18 @@ type Props = {
 export type ExplorerSearchHandle = {
   focus: () => void;
   isFocused: () => boolean;
+  focusResults: () => void;
+  hasResults: () => boolean;
 };
 
 export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function ExplorerSearch({
   rootPath,
   onOpenFile,
+  onFileOpened,
+  onToggleFolder,
   open,
   onRequestClose,
+  onFocusTree,
   onActiveChange,
   onRevealInTerminal,
   onAttachToAgent,
@@ -78,8 +92,62 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastKeyboardNavAt = useRef(0);
+  const pendingGRef = useRef<number | null>(null);
 
   const active = query.trim().length > 0;
+
+  useEffect(() => {
+    return () => {
+      if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!open || results.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      const active = document.activeElement;
+      const inResults =
+        active instanceof HTMLElement &&
+        (!!active.closest?.("[data-file-explorer-search-results]") ||
+          !!scrollRef.current?.contains(active));
+      if (inResults) return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable)
+      )
+        return;
+      if (e.key === "g") {
+        if (pendingGRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          window.clearTimeout(pendingGRef.current);
+          pendingGRef.current = null;
+          setSelectedIndex(0);
+          requestAnimationFrame(() => {
+            const el = scrollRef.current?.querySelector('[data-index="0"]');
+            el?.scrollIntoView({ block: "nearest" });
+          });
+        } else {
+          e.preventDefault();
+          e.stopPropagation();
+          pendingGRef.current = window.setTimeout(() => {
+            pendingGRef.current = null;
+          }, GG_TIMEOUT_MS);
+        }
+        return;
+      }
+      if (pendingGRef.current) {
+        window.clearTimeout(pendingGRef.current);
+        pendingGRef.current = null;
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, results.length]);
 
   useEffect(() => {
     onActiveChange?.(active);
@@ -149,8 +217,14 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
         });
       },
       isFocused: () => document.activeElement === inputRef.current,
+      focusResults: () => {
+        requestAnimationFrame(() => {
+          scrollRef.current?.focus();
+        });
+      },
+      hasResults: () => results.length > 0,
     }),
-    [],
+    [results],
   );
 
   useEffect(() => {
@@ -161,8 +235,11 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   }, [selectedIndex, results, active]);
 
   const handleSelect = (hit: SearchHit) => {
-    if (!hit.is_dir) {
+    if (hit.is_dir) {
+      onToggleFolder?.(hit.path);
+    } else {
       onOpenFile(hit.path);
+      onFileOpened?.();
     }
   };
 
@@ -179,12 +256,28 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
           <Input
             ref={inputRef}
             value={query}
+            data-file-explorer-search=""
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "Escape") {
                 e.preventDefault();
                 e.stopPropagation();
                 onRequestClose();
+                return;
+              }
+              if (e.ctrlKey && e.key === "j") {
+                e.preventDefault();
+                e.stopPropagation();
+                if (results.length > 0) {
+                  setSelectedIndex(0);
+                  requestAnimationFrame(() => {
+                    const el = scrollRef.current?.querySelector('[data-index="0"]');
+                    el?.scrollIntoView({ block: "nearest" });
+                  });
+                  scrollRef.current?.focus();
+                } else {
+                  onFocusTree?.();
+                }
                 return;
               }
               if (results.length > 0) {
@@ -222,7 +315,92 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
 
       {active ? (
         <ScrollArea className="min-h-0 flex-1">
-          <div className="py-1" ref={scrollRef}>
+          <div
+            className="py-1 outline-none"
+            ref={scrollRef}
+            data-file-explorer-search-results=""
+            tabIndex={-1}
+            onKeyDown={(e) => {
+              if (e.ctrlKey && e.key.toLowerCase() === "k") {
+                e.preventDefault();
+                e.stopPropagation();
+                inputRef.current?.focus();
+                return;
+              }
+              if (e.ctrlKey && e.key.toLowerCase() === "l") {
+                e.preventDefault();
+                e.stopPropagation();
+                inputRef.current?.focus();
+                return;
+              }
+              if (isPlainVimKey(e)) {
+                if (pendingGRef.current && e.key === "g") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  window.clearTimeout(pendingGRef.current);
+                  pendingGRef.current = null;
+                  if (results.length > 0) {
+                    setSelectedIndex(0);
+                    requestAnimationFrame(() => {
+                      const el = scrollRef.current?.querySelector('[data-index="0"]');
+                      el?.scrollIntoView({ block: "nearest" });
+                    });
+                  }
+                  return;
+                }
+                if (isPendingGKey(e)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
+                  pendingGRef.current = window.setTimeout(() => {
+                    pendingGRef.current = null;
+                  }, GG_TIMEOUT_MS);
+                  return;
+                }
+                if (pendingGRef.current) {
+                  window.clearTimeout(pendingGRef.current);
+                  pendingGRef.current = null;
+                }
+                if (isCapitalGKey(e)) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (results.length > 0) {
+                    const last = results.length - 1;
+                    setSelectedIndex(last);
+                    requestAnimationFrame(() => {
+                      const el = scrollRef.current?.querySelector(`[data-index="${last}"]`);
+                      el?.scrollIntoView({ block: "nearest" });
+                    });
+                  }
+                  return;
+                }
+                if (e.key === "j") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  lastKeyboardNavAt.current = Date.now();
+                  setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
+                  return;
+                }
+                if (e.key === "k") {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  lastKeyboardNavAt.current = Date.now();
+                  setSelectedIndex((prev) => Math.max(prev - 1, 0));
+                  return;
+                }
+              }
+              if (pendingGRef.current) {
+                window.clearTimeout(pendingGRef.current);
+                pendingGRef.current = null;
+              }
+              if (e.key === "Enter") {
+                e.preventDefault();
+                e.stopPropagation();
+                const hit = results[selectedIndex];
+                if (hit) handleSelect(hit);
+              }
+            }}
+          >
             {searching && results.length === 0 ? (
               <div className="px-3 py-2 text-[11px] text-muted-foreground">
                 Searching…
