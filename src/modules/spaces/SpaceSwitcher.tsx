@@ -17,12 +17,12 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  GG_TIMEOUT_MS,
-  isCapitalGKey,
-  isPendingGKey,
+  interpretVimListKey,
+  isEditableTarget,
+  isPlainVimKey,
 } from "@/modules/explorer/lib/vimKeys";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineRename } from "./components/InlineRename";
 import { accentFor } from "./lib/spaceColor";
@@ -157,83 +157,82 @@ export function SpaceSwitcher({
       return next;
     });
 
+  const handleActivateItem = useCallback(() => {
+    const item = items[vimNavIndex];
+    if (!item) return;
+    if (item.kind === "space") {
+      setActive(item.spaceId);
+      onOpenChange(false);
+    } else if (item.kind === "tab") {
+      onJumpTab(item.tabId);
+    }
+  }, [items, vimNavIndex, setActive, onOpenChange, onJumpTab]);
+
   useEffect(() => {
     if (!open || items.length === 0) return;
     const onKey = (e: KeyboardEvent) => {
       const target = (e.target as HTMLElement | null) ?? document.activeElement;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          (target as HTMLElement).isContentEditable)
-      )
-        return;
-
-      if (e.key === "Enter") {
-        e.preventDefault();
-        const item = items[vimNavIndex];
-        if (item?.kind === "space") {
-          setActive(item.spaceId);
-          onOpenChange(false);
-        } else if (item?.kind === "tab") {
-          onJumpTab(item.tabId);
-        }
-        return;
-      }
+      if (isEditableTarget(target)) return;
 
       if (e.ctrlKey || e.altKey || e.metaKey) return;
 
-      if (vimNavigationEnabled) {
-        setVimNavIndex((prev) => {
-          const len = items.length;
-          if (len === 0) return 0;
-          const clamp = (i: number) => Math.max(0, Math.min(i, len - 1));
+      const action = interpretVimListKey(e, vimPendingGRef);
 
-          if (e.key === "j") {
-            e.preventDefault();
-            return clamp(prev + 1);
-          }
-          if (e.key === "k") {
-            e.preventDefault();
-            return clamp(prev - 1);
-          }
+      if (action.kind === "activate") {
+        e.preventDefault();
+        handleActivateItem();
+        return;
+      }
 
-          if (isPendingGKey(e)) {
-            e.preventDefault();
-            if (vimPendingGRef.current) {
-              window.clearTimeout(vimPendingGRef.current);
-              vimPendingGRef.current = null;
-              return 0;
-            }
-            vimPendingGRef.current = window.setTimeout(() => {
-              vimPendingGRef.current = null;
-            }, GG_TIMEOUT_MS);
-            return prev;
-          }
-          if (isCapitalGKey(e)) {
-            e.preventDefault();
-            return len - 1;
-          }
+      if (action.kind === "escape") {
+        e.preventDefault();
+        onOpenChange(false);
+        return;
+      }
 
-          if (e.key === "h") {
-            const item = items[prev];
-            if (item?.kind === "space" && expanded.has(item.spaceId)) {
-              e.preventDefault();
-              toggleExpand(item.spaceId);
-            }
-            return prev;
-          }
-          if (e.key === "l") {
-            const item = items[prev];
-            if (item?.kind === "space" && !expanded.has(item.spaceId)) {
-              e.preventDefault();
-              toggleExpand(item.spaceId);
-            }
-            return prev;
-          }
+      if (!vimNavigationEnabled) return;
 
-          return prev;
-        });
+      const len = items.length;
+      if (len === 0) return;
+
+      if (action.kind === "next") {
+        e.preventDefault();
+        setVimNavIndex((prev) => Math.min(prev + 1, len - 1));
+        return;
+      }
+      if (action.kind === "prev") {
+        e.preventDefault();
+        setVimNavIndex((prev) => Math.max(prev - 1, 0));
+        return;
+      }
+      if (action.kind === "first") {
+        e.preventDefault();
+        setVimNavIndex(0);
+        return;
+      }
+      if (action.kind === "last") {
+        e.preventDefault();
+        setVimNavIndex(len - 1);
+        return;
+      }
+
+      if (action.kind === "none" && isPlainVimKey(e)) {
+        if (e.key === "h") {
+          const item = items[vimNavIndex];
+          if (item?.kind === "space" && expanded.has(item.spaceId)) {
+            e.preventDefault();
+            toggleExpand(item.spaceId);
+          }
+          return;
+        }
+        if (e.key === "l") {
+          const item = items[vimNavIndex];
+          if (item?.kind === "space" && !expanded.has(item.spaceId)) {
+            e.preventDefault();
+            toggleExpand(item.spaceId);
+          }
+          return;
+        }
       }
     };
     window.addEventListener("keydown", onKey);
@@ -244,7 +243,7 @@ export function SpaceSwitcher({
         vimPendingGRef.current = null;
       }
     };
-  }, [open, vimNavigationEnabled, items, vimNavIndex, setActive, onOpenChange, onJumpTab, expanded, toggleExpand]);
+  }, [open, vimNavigationEnabled, items, vimNavIndex, setActive, onOpenChange, onJumpTab, expanded, toggleExpand, handleActivateItem]);
 
   useEffect(() => {
     if (open) setVimNavIndex(0);

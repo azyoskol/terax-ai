@@ -1,8 +1,7 @@
 import { cn } from "@/lib/utils";
 import {
-  GG_TIMEOUT_MS,
-  isCapitalGKey,
-  isPendingGKey,
+  interpretVimListKey,
+  isEditableTarget,
 } from "@/modules/explorer/lib/vimKeys";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { labelFor } from "./lib/tabLabel";
@@ -40,13 +39,11 @@ export function BufferTabPicker({
   const [index, setIndex] = useState(0);
   const pendingGRef = useRef<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const initialMount = useRef(true);
 
   useEffect(() => {
     if (open) {
       const idx = tabs.findIndex((t) => t.id === activeId);
       setIndex(idx >= 0 ? idx : 0);
-      initialMount.current = true;
     }
   }, [open, tabs, activeId]);
 
@@ -55,66 +52,49 @@ export function BufferTabPicker({
     const onKey = (e: KeyboardEvent) => {
       const target =
         (e.target as HTMLElement | null) ?? document.activeElement;
-      if (
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          (target as HTMLElement).isContentEditable)
-      )
-        return;
+      if (isEditableTarget(target)) return;
 
-      if (e.key === "Enter") {
-        e.preventDefault();
-        e.stopPropagation();
-        const t = tabs[index];
-        if (t) onActivate(t.id);
-        return;
-      }
-
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-        return;
-      }
-
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-
+      const action = interpretVimListKey(e, pendingGRef);
       const len = tabs.length;
-      if (len === 0) return;
 
-      if (e.key === "j") {
-        e.preventDefault();
-        e.stopPropagation();
-        setIndex((prev) => Math.min(prev + 1, len - 1));
-        return;
-      }
-      if (e.key === "k") {
-        e.preventDefault();
-        e.stopPropagation();
-        setIndex((prev) => Math.max(prev - 1, 0));
-        return;
-      }
-
-      if (isPendingGKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (pendingGRef.current) {
-          window.clearTimeout(pendingGRef.current);
-          pendingGRef.current = null;
-          setIndex(0);
-        } else {
-          pendingGRef.current = window.setTimeout(() => {
-            pendingGRef.current = null;
-          }, GG_TIMEOUT_MS);
+      switch (action.kind) {
+        case "activate": {
+          e.preventDefault();
+          e.stopPropagation();
+          const t = tabs[index];
+          if (t) onActivate(t.id);
+          return;
         }
-        return;
-      }
-      if (isCapitalGKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        setIndex(len - 1);
-        return;
+        case "escape": {
+          e.preventDefault();
+          e.stopPropagation();
+          onClose();
+          return;
+        }
+        case "next": {
+          e.preventDefault();
+          e.stopPropagation();
+          setIndex((prev) => Math.min(prev + 1, len - 1));
+          return;
+        }
+        case "prev": {
+          e.preventDefault();
+          e.stopPropagation();
+          setIndex((prev) => Math.max(prev - 1, 0));
+          return;
+        }
+        case "first": {
+          e.preventDefault();
+          e.stopPropagation();
+          setIndex(0);
+          return;
+        }
+        case "last": {
+          e.preventDefault();
+          e.stopPropagation();
+          setIndex(len - 1);
+          return;
+        }
       }
     };
     window.addEventListener("keydown", onKey, { capture: true });

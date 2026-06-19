@@ -32,6 +32,7 @@ import {
   type EditorPaneHandle,
 } from "@/modules/editor";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
+import { isEditableTarget, isTerminalTarget } from "@/modules/explorer/lib/vimKeys";
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import {
   Header,
@@ -252,7 +253,26 @@ export default function App() {
     adoptWorkspaceEnv,
   ]);
 
-  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switcherOpen, _setSwitcherOpen] = useState(false);
+  const setSwitcherOpen = useCallback(
+    (open: boolean) => {
+      _setSwitcherOpen(open);
+      if (open) return;
+      let attempts = 0;
+      const tryFocus = () => {
+        activeEditorHandleRef.current?.focus();
+        const el = document.activeElement;
+        if (
+          el instanceof HTMLElement &&
+          (el.closest(".cm-editor") || el.closest("[data-editor]"))
+        )
+          return;
+        if (++attempts < 15) requestAnimationFrame(tryFocus);
+      };
+      requestAnimationFrame(tryFocus);
+    },
+    [],
+  );
 
   const spaceTabs = useMemo(
     () => tabs.filter((t) => t.spaceId === (activeSpaceId ?? DEFAULT_SPACE_ID)),
@@ -645,11 +665,19 @@ export default function App() {
           case "e": focusExplorer(); break;
           case "b": setBufferPickerOpen(true); break;
           case "s": setSwitcherOpen(true); break;
+          case "g":
+            cycleSidebarView("source-control");
+            requestAnimationFrame(() => {
+              const sc = document.querySelector<HTMLElement>(
+                "[data-source-control]",
+              );
+              sc?.focus();
+            });
+            break;
+          case "t": stepSwitcher(1); break;
+          case "T": stepSwitcher(-1); break;
           case "q":
           case "Escape": break;
-          // t/T deferred: direct tab switching from prefix not yet safe
-          // case "t": stepSwitcher(1); break;
-          // case "T": stepSwitcher(-1); break;
           default: handled = false; break;
         }
         if (handled) {
@@ -661,7 +689,24 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer, setSwitcherOpen]);
+  }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer, setSwitcherOpen, cycleSidebarView, stepSwitcher]);
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Tab") return;
+      const target = (e.target as HTMLElement | null) ?? document.activeElement;
+      if (isTerminalTarget(target)) return;
+      if (isEditableTarget(target)) return;
+      if (target?.closest?.(".cm-editor")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.shiftKey) stepSwitcher(-1);
+      else stepSwitcher(1);
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [stepSwitcher]);
+
   const openPreviewTab = useCallback(
     (url: string) => {
       const id = newPreviewTab(url);
@@ -1079,9 +1124,20 @@ export default function App() {
       setActiveId(tabId);
       useSpaces.getState().setActive(t.spaceId);
       setBufferPickerOpen(false);
-      requestAnimationFrame(() => restoreEditorFocus());
+      let attempts = 0;
+      const tryFocus = () => {
+        activeEditorHandleRef.current?.focus();
+        const el = document.activeElement;
+        if (
+          el instanceof HTMLElement &&
+          (el.closest(".cm-editor") || el.closest("[data-editor]"))
+        )
+          return;
+        if (++attempts < 15) requestAnimationFrame(tryFocus);
+      };
+      requestAnimationFrame(tryFocus);
     },
-    [setActiveId, restoreEditorFocus],
+    [setActiveId],
   );
 
   const spaceSwitcher = (

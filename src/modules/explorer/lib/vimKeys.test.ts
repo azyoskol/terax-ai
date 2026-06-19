@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import {
   normalizeVimKey,
   isPlainVimKey,
   isPendingGKey,
   isCapitalGKey,
+  interpretVimListKey,
 } from "./vimKeys";
 
 describe("normalizeVimKey", () => {
@@ -102,5 +103,108 @@ describe("isCapitalGKey", () => {
 
   it("returns false for Alt+G", () => {
     expect(isCapitalGKey(makeKeyLike("G", { alt: true }))).toBe(false);
+  });
+});
+
+describe("interpretVimListKey", () => {
+  function makeEvent(
+    key: string,
+    mods: { ctrl?: boolean; alt?: boolean; meta?: boolean } = {},
+  ) {
+    return { key, ctrlKey: mods.ctrl ?? false, altKey: mods.alt ?? false, metaKey: mods.meta ?? false } as KeyboardEvent;
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  it("j returns next", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("j"), ref)).toEqual({ kind: "next" });
+  });
+
+  it("k returns prev", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("k"), ref)).toEqual({ kind: "prev" });
+  });
+
+  it("single g returns armG", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("g"), ref)).toEqual({ kind: "armG" });
+    expect(ref.current).not.toBeNull();
+  });
+
+  it("gg returns first", () => {
+    const ref: { current: number | null } = { current: 123 };
+    expect(interpretVimListKey(makeEvent("g"), ref)).toEqual({ kind: "first" });
+    expect(ref.current).toBeNull();
+  });
+
+  it("G returns last", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("G"), ref)).toEqual({ kind: "last" });
+  });
+
+  it("Ctrl+j returns none (does not move)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("j", { ctrl: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Alt+g does not trigger gg", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("g", { alt: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Meta+g does not trigger gg", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("g", { meta: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Enter returns activate", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("Enter"), ref)).toEqual({
+      kind: "activate",
+    });
+  });
+
+  it("Escape returns escape", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("Escape"), ref)).toEqual({
+      kind: "escape",
+    });
+  });
+
+  it("non-g key clears pending g", () => {
+    const ref = { current: 123 as unknown as number };
+    expect(interpretVimListKey(makeEvent("j"), ref)).toEqual({ kind: "next" });
+    expect(ref.current).toBeNull();
+  });
+
+  it("Enter clears pending g", () => {
+    const ref = { current: 123 as unknown as number };
+    expect(interpretVimListKey(makeEvent("Enter"), ref)).toEqual({
+      kind: "activate",
+    });
+    expect(ref.current).toBeNull();
+  });
+
+  it("pending g clears after GG_TIMEOUT_MS", () => {
+    const ref = { current: null };
+    interpretVimListKey(makeEvent("g"), ref);
+    expect(ref.current).not.toBeNull();
+    vi.advanceTimersByTime(800);
+    expect(ref.current).toBeNull();
+  });
+
+  it("returns none for unknown keys", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("a"), ref)).toEqual({ kind: "none" });
+    expect(interpretVimListKey(makeEvent("x"), ref)).toEqual({ kind: "none" });
   });
 });
