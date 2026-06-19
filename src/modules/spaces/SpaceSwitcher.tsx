@@ -16,10 +16,17 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
+import {
+  GG_TIMEOUT_MS,
+  isCapitalGKey,
+  isPendingGKey,
+} from "@/modules/explorer/lib/vimKeys";
+import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineRename } from "./components/InlineRename";
 import { accentFor } from "./lib/spaceColor";
+import { buildNavItems } from "./lib/navItems";
 import type { SpaceMeta } from "./lib/store";
 import { useSpaces } from "./lib/useSpaces";
 import { SpaceAvatar } from "./SpaceAvatar";
@@ -93,6 +100,12 @@ export function SpaceSwitcher({
   const [expanded, setExpanded] = useState<Set<string>>(() =>
     activeId ? new Set([activeId]) : new Set(),
   );
+  const vimNavigationEnabled = usePreferencesStore(
+    (s) => s.vimNavigationEnabled,
+  );
+  const [vimNavIndex, setVimNavIndex] = useState(0);
+  const vimPendingGRef = useRef<number | null>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   const drag = useRef<DragState | null>(null);
   const dropRef = useRef<DropTarget | null>(null);
@@ -114,6 +127,11 @@ export function SpaceSwitcher({
     }
     return m;
   }, [tabs]);
+
+  const items = useMemo(
+    () => buildNavItems(spaces, tabsBySpace, expanded),
+    [spaces, tabsBySpace, expanded],
+  );
 
   const draggedTab =
     dragging?.kind === "tab"
@@ -138,6 +156,112 @@ export function SpaceSwitcher({
       else next.add(id);
       return next;
     });
+
+  useEffect(() => {
+    if (!open || items.length === 0) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = (e.target as HTMLElement | null) ?? document.activeElement;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          (target as HTMLElement).isContentEditable)
+      )
+        return;
+
+      if (e.key === "Enter") {
+        e.preventDefault();
+        const item = items[vimNavIndex];
+        if (item?.kind === "space") {
+          setActive(item.spaceId);
+          onOpenChange(false);
+        } else if (item?.kind === "tab") {
+          onJumpTab(item.tabId);
+        }
+        return;
+      }
+
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
+
+      if (vimNavigationEnabled) {
+        setVimNavIndex((prev) => {
+          const len = items.length;
+          if (len === 0) return 0;
+          const clamp = (i: number) => Math.max(0, Math.min(i, len - 1));
+
+          if (e.key === "j") {
+            e.preventDefault();
+            return clamp(prev + 1);
+          }
+          if (e.key === "k") {
+            e.preventDefault();
+            return clamp(prev - 1);
+          }
+
+          if (isPendingGKey(e)) {
+            e.preventDefault();
+            if (vimPendingGRef.current) {
+              window.clearTimeout(vimPendingGRef.current);
+              vimPendingGRef.current = null;
+              return 0;
+            }
+            vimPendingGRef.current = window.setTimeout(() => {
+              vimPendingGRef.current = null;
+            }, GG_TIMEOUT_MS);
+            return prev;
+          }
+          if (isCapitalGKey(e)) {
+            e.preventDefault();
+            return len - 1;
+          }
+
+          if (e.key === "h") {
+            const item = items[prev];
+            if (item?.kind === "space" && expanded.has(item.spaceId)) {
+              e.preventDefault();
+              toggleExpand(item.spaceId);
+            }
+            return prev;
+          }
+          if (e.key === "l") {
+            const item = items[prev];
+            if (item?.kind === "space" && !expanded.has(item.spaceId)) {
+              e.preventDefault();
+              toggleExpand(item.spaceId);
+            }
+            return prev;
+          }
+
+          return prev;
+        });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      if (vimPendingGRef.current) {
+        window.clearTimeout(vimPendingGRef.current);
+        vimPendingGRef.current = null;
+      }
+    };
+  }, [open, vimNavigationEnabled, items, vimNavIndex, setActive, onOpenChange, onJumpTab, expanded, toggleExpand]);
+
+  useEffect(() => {
+    if (open) setVimNavIndex(0);
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-nav-index="${vimNavIndex}"]`,
+    );
+    if (el) {
+      el.scrollIntoView({ block: "nearest" });
+      el.focus({ preventScroll: true });
+    } else {
+      listRef.current?.focus();
+    }
+  }, [open, vimNavIndex]);
 
   const endDrag = (el: Element) => {
     const st = drag.current;
@@ -254,33 +378,48 @@ export function SpaceSwitcher({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent align="start" sideOffset={6} className="w-[20rem] p-1.5">
+      <PopoverContent data-spaces-menu="" align="start" sideOffset={6} className="w-[20rem] p-1.5">
         <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
           <span className="text-xs font-semibold text-foreground">Spaces</span>
           {shortcut && (
             <Kbd className="h-5 bg-muted/70 text-[10px]">{shortcut}</Kbd>
           )}
         </div>
-        <div className="-mx-0.5 max-h-[60vh] overflow-y-auto px-0.5">
-          {spaces.map((sp) => (
-            <SpaceRow
-              key={sp.id}
-              space={sp}
-              tabs={tabsBySpace.get(sp.id) ?? []}
-              isActive={sp.id === activeId}
-              canDelete={spaces.length > 1}
-              expanded={expanded.has(sp.id)}
-              editing={editingId === sp.id}
-              dragging={dragging}
-              drop={drop}
-              draggingTabFromOther={
-                draggedTab !== null && draggedTab.spaceId !== sp.id
-              }
-              onPointerDown={onPointerDown}
-              onPointerMove={onPointerMove}
-              onPointerUp={onPointerUp}
-              onToggle={() => toggleExpand(sp.id)}
-              onSwitch={() => {
+        <div ref={listRef} data-spaces-list tabIndex={-1} className="-mx-0.5 max-h-[60vh] overflow-y-auto px-0.5 outline-none">
+          {spaces.map((sp) => {
+            const spaceIdx = items.findIndex(
+              (it) => it.kind === "space" && it.spaceId === sp.id,
+            );
+            const navItem =
+              vimNavIndex >= 0 && vimNavIndex < items.length
+                ? items[vimNavIndex]
+                : null;
+            const selectedTabId =
+              vimNavigationEnabled && navItem?.kind === "tab"
+                ? navItem.tabId
+                : null;
+            return (
+              <SpaceRow
+                key={sp.id}
+                space={sp}
+                tabs={tabsBySpace.get(sp.id) ?? []}
+                isActive={sp.id === activeId}
+                canDelete={spaces.length > 1}
+                expanded={expanded.has(sp.id)}
+                editing={editingId === sp.id}
+                isSelected={vimNavigationEnabled && spaceIdx === vimNavIndex}
+                selectedTabId={selectedTabId}
+                navIndex={vimNavigationEnabled ? spaceIdx : -1}
+                dragging={dragging}
+                drop={drop}
+                draggingTabFromOther={
+                  draggedTab !== null && draggedTab.spaceId !== sp.id
+                }
+                onPointerDown={onPointerDown}
+                onPointerMove={onPointerMove}
+                onPointerUp={onPointerUp}
+                onToggle={() => toggleExpand(sp.id)}
+                onSwitch={() => {
                 setActive(sp.id);
                 onOpenChange(false);
               }}
@@ -295,8 +434,9 @@ export function SpaceSwitcher({
               onNewTab={() => onNewTabInSpace(sp.id)}
               onJumpTab={onJumpTab}
               onCloseTab={onCloseTab}
-            />
-          ))}
+              />
+            );
+          })}
         </div>
         <div className="mt-1.5 border-t border-border/60 pt-1.5">
           <button
@@ -338,6 +478,9 @@ type SpaceRowProps = {
   canDelete: boolean;
   expanded: boolean;
   editing: boolean;
+  isSelected: boolean;
+  selectedTabId: number | null;
+  navIndex: number;
   dragging: { kind: "space" | "tab"; id: string | number } | null;
   drop: DropTarget | null;
   draggingTabFromOther: boolean;
@@ -366,6 +509,9 @@ function SpaceRow({
   canDelete,
   expanded,
   editing,
+  isSelected,
+  selectedTabId,
+  navIndex,
   dragging,
   drop,
   draggingTabFromOther,
@@ -394,6 +540,8 @@ function SpaceRow({
       <div
         data-drop="space"
         data-space-id={space.id}
+        data-spaces-item=""
+        data-nav-index={navIndex >= 0 ? navIndex : undefined}
         role="button"
         tabIndex={editing ? -1 : 0}
         onPointerDown={editing ? undefined : (e) => onPointerDown(e, "space", space.id)}
@@ -404,16 +552,18 @@ function SpaceRow({
           if (editing) return;
           if (e.key === "Enter") {
             e.preventDefault();
+            e.stopPropagation();
             onSwitch();
           }
         }}
         className={cn(
           "group relative flex cursor-pointer select-none items-center gap-1.5 rounded-md px-1.5 py-1.5 outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/40",
-          moveTarget
+          isSelected && "bg-accent ring-1 ring-inset ring-primary/30",
+          !isSelected && (moveTarget
             ? "bg-primary/10 ring-1 ring-inset ring-primary/40"
             : isActive
               ? "bg-accent"
-              : "hover:bg-accent/50",
+              : "hover:bg-accent/50"),
         )}
       >
         <button
@@ -475,12 +625,14 @@ function SpaceRow({
 
       {expanded && (
         <div className="flex flex-col gap-px py-0.5 pl-10 pr-0.5">
-          {tabs.map((t) => (
+          {tabs.map((t, i) => (
             <TabRow
               key={t.id}
               tab={t}
               dragging={dragging}
               drop={drop}
+              isSelected={selectedTabId === t.id}
+              navIndex={navIndex >= 0 ? navIndex + 1 + i : -1}
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={onPointerUp}
@@ -503,6 +655,8 @@ function TabRow({
   tab,
   dragging,
   drop,
+  isSelected,
+  navIndex,
   onPointerDown,
   onPointerMove,
   onPointerUp,
@@ -512,6 +666,8 @@ function TabRow({
   tab: Tab;
   dragging: { kind: "space" | "tab"; id: string | number } | null;
   drop: DropTarget | null;
+  isSelected: boolean;
+  navIndex: number;
   onPointerDown: (
     e: React.PointerEvent,
     kind: "space" | "tab",
@@ -534,6 +690,8 @@ function TabRow({
       <div
         data-drop="tab"
         data-tab-id={tab.id}
+        data-spaces-item=""
+        data-nav-index={navIndex >= 0 ? navIndex : undefined}
         role="button"
         tabIndex={0}
         onPointerDown={(e) => onPointerDown(e, "tab", tab.id)}
@@ -543,11 +701,13 @@ function TabRow({
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
+            e.stopPropagation();
             onJump();
           }
         }}
         className={cn(
           "group/tab relative flex cursor-pointer select-none items-center gap-2 rounded-md px-2 py-1 outline-none transition-colors hover:bg-accent/50 focus-visible:ring-2 focus-visible:ring-primary/40",
+          isSelected && "bg-accent ring-1 ring-inset ring-primary/30",
           isDragging && "opacity-50",
         )}
       >
