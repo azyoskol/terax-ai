@@ -612,12 +612,12 @@ export default function App() {
     (s) => s.explorerGitDecorations,
   );
 
-  const vimMode = usePreferencesStore((s) => s.vimMode);
+  const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
   const [terminalPrefixActive, setTerminalPrefixActive] = useState(false);
   const terminalPrefixRef = useRef(false);
 
   useEffect(() => {
-    if (!vimMode) return;
+    if (!vimNavigationEnabled) return;
     const onKey = (e: KeyboardEvent) => {
       const target = (e.target as HTMLElement | null) ?? document.activeElement;
       const inTerminal = !!(target as HTMLElement | null)?.closest?.(".xterm");
@@ -648,7 +648,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [vimMode, activeId, focusDirectionalPaneInTab, focusExplorer]);
+  }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer]);
   const openPreviewTab = useCallback(
     (url: string) => {
       const id = newPreviewTab(url);
@@ -767,9 +767,15 @@ export default function App() {
         const inTerminal = !!(target as HTMLElement | null)?.closest?.(
           ".xterm",
         );
-        if (!inTerminal) return false;
-        const sel = captureActiveSelection();
-        return !sel || !sel.trim();
+        if (inTerminal) {
+          const sel = captureActiveSelection();
+          return !sel || !sel.trim();
+        }
+        const inExplorerSearch = !!(target as HTMLElement | null)?.closest?.(
+          "[data-file-explorer-search]",
+        );
+        if (inExplorerSearch) return true;
+        return false;
       }
       if (id === "terminal.clear") {
         // Only intercept ⌘K while a terminal is focused; elsewhere let the key
@@ -802,10 +808,30 @@ export default function App() {
         id === "workspace.focusExplorer" ||
         id === "workspace.focusEditor"
       ) {
-        if (!vimMode) return true;
+        if (!vimNavigationEnabled) return true;
         const target = (e.target as HTMLElement | null) ?? document.activeElement;
         if ((target as HTMLElement | null)?.closest?.(".xterm, [data-terminal]")) return true;
         if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return true;
+        const inExplorerSearchResults = !!(target as HTMLElement | null)?.closest?.(
+          "[data-file-explorer-search-results]",
+        );
+        if (inExplorerSearchResults) {
+          if (id === "workspace.focusEditor" && e.ctrlKey && e.key.toLowerCase() === "l") {
+            const searchInput = document.querySelector<HTMLElement>(
+              "[data-file-explorer-search]",
+            );
+            if (searchInput) {
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              searchInput.focus();
+            }
+          }
+          return true;
+        }
+        const inExplorerSearch = !!(target as HTMLElement | null)?.closest?.(
+          "[data-file-explorer-search]",
+        );
+        if (inExplorerSearch) return true;
         if (id === "workspace.focusExplorer") {
           const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
           if (inExplorer) return true;
@@ -820,7 +846,7 @@ export default function App() {
       }
       return false;
     },
-    [activeTab, vimMode],
+    [activeTab, vimNavigationEnabled],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });

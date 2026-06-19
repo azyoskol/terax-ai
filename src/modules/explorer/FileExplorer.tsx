@@ -29,6 +29,7 @@ import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { EntryRow, PendingRow, StatusRow, type RowActions } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
+import { normalizeVimKey } from "./lib/vimKeys";
 import {
   copyToClipboard,
   relativePath,
@@ -47,6 +48,7 @@ import type { GitStatusSnapshot } from "@/modules/ai/lib/native";
 
 export type FileExplorerHandle = {
   focus: () => void;
+  focusBestSurface: () => void;
   isFocused: () => boolean;
   focusSearch: () => void;
 };
@@ -99,21 +101,6 @@ function basename(path: string): string {
 function parentOf(path: string, fallback: string): string {
   const i = path.lastIndexOf("/");
   return i > 0 ? path.slice(0, i) : fallback;
-}
-
-function normalizeVimKey(key: string): string {
-  switch (key) {
-    case "h":
-      return "ArrowLeft";
-    case "j":
-      return "ArrowDown";
-    case "k":
-      return "ArrowUp";
-    case "l":
-      return "ArrowRight";
-    default:
-      return key;
-  }
 }
 
 function buildRows(
@@ -213,7 +200,7 @@ export const FileExplorer = memo(
   ) {
     const tree = useFileTree(rootPath, { onPathRenamed, onPathDeleted });
     const gitDecorations = usePreferencesStore((s) => s.explorerGitDecorations);
-    const vimMode = usePreferencesStore((s) => s.vimMode);
+    const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
     const { lookup: lookupGitStatus } = useGitStatus(
       rootPath,
       gitDecorations ? gitStatus : null,
@@ -225,6 +212,7 @@ export const FileExplorer = memo(
     const searchRef = useRef<ExplorerSearchHandle>(null);
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
+    const pendingVimCreateRef = useRef(false);
 
     const { rows, entryIndexByPath } = useMemo(() => {
       if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
@@ -344,6 +332,20 @@ export const FileExplorer = memo(
             requestAnimationFrame(() => scrollEntryIntoView(first));
           }
         },
+        focusBestSurface: () => {
+          if (isSearchActive && searchRef.current?.hasResults()) {
+            searchRef.current.focusResults();
+          } else if (isSearchOpen) {
+            searchRef.current?.focus();
+          } else {
+            containerRef.current?.focus();
+            if (!selectedPath && entryPaths.length > 0) {
+              const first = entryPaths[0];
+              setSelectedPath(first);
+              requestAnimationFrame(() => scrollEntryIntoView(first));
+            }
+          }
+        },
         isFocused: () => {
           const c = containerRef.current;
           if (!c) return false;
@@ -355,8 +357,18 @@ export const FileExplorer = memo(
           searchRef.current?.focus();
         },
       }),
-      [entryPaths, scrollEntryIntoView, selectedPath],
+      [entryPaths, isSearchActive, isSearchOpen, scrollEntryIntoView, selectedPath],
     );
+
+    useEffect(() => {
+      if (!pendingVimCreateRef.current) return;
+      if (tree.pendingCreate !== null) return;
+      pendingVimCreateRef.current = false;
+      requestAnimationFrame(() => {
+        if (isSearchOpen) searchRef.current?.focus();
+        else containerRef.current?.focus();
+      });
+    }, [tree.pendingCreate, isSearchOpen]);
 
     useGlobalShortcuts({
       "explorer.search": () => {
@@ -390,7 +402,7 @@ export const FileExplorer = memo(
       tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-      if (tree.renaming || tree.pendingCreate || isSearchOpen) return;
+      if (tree.renaming || tree.pendingCreate) return;
       const target = e.target as HTMLElement;
       if (
         target.tagName === "INPUT" ||
@@ -399,6 +411,39 @@ export const FileExplorer = memo(
       )
         return;
       if (entryPaths.length === 0) return;
+
+      if (vimNavigationEnabled) {
+        if (e.key === "/") {
+          e.preventDefault();
+          setIsSearchOpen(true);
+          searchRef.current?.focus();
+          return;
+        }
+        if (e.ctrlKey && e.key === "k") {
+          e.preventDefault();
+          if (isSearchOpen) searchRef.current?.focus();
+          return;
+        }
+        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+          if (e.key === "a" || e.key === "A") {
+            const targetDir = (() => {
+              if (!selectedPath) return rootPath;
+              const idx = entryIndexByPath.get(selectedPath);
+              const row = idx !== undefined ? rows[idx] : undefined;
+              if (row?.kind === "entry" && row.isDir) return row.path;
+              return parentOf(selectedPath, rootPath);
+            })();
+            pendingVimCreateRef.current = true;
+            tree.beginCreate(targetDir, e.key === "a" ? "file" : "dir");
+            return;
+          }
+          if (e.key === "R") {
+            tree.refresh(rootPath);
+            return;
+          }
+        }
+      }
+
       if (e.ctrlKey || e.altKey || e.metaKey) return;
 
       const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
@@ -409,7 +454,7 @@ export const FileExplorer = memo(
         requestAnimationFrame(() => scrollEntryIntoView(path));
       };
 
-      const key = vimMode && !e.shiftKey ? normalizeVimKey(e.key) : e.key;
+      const key = vimNavigationEnabled && !e.shiftKey ? normalizeVimKey(e.key) : e.key;
       switch (key) {
         case "ArrowDown":
           e.preventDefault();
@@ -576,8 +621,14 @@ export const FileExplorer = memo(
           ref={searchRef}
           rootPath={rootPath}
           onOpenFile={onOpenFile}
+          onFileOpened={onFileOpened}
+          onToggleFolder={tree.toggle}
           open={isSearchOpen}
-          onRequestClose={() => setIsSearchOpen(false)}
+          onRequestClose={() => {
+            setIsSearchOpen(false);
+            requestAnimationFrame(() => containerRef.current?.focus());
+          }}
+          onFocusTree={() => containerRef.current?.focus()}
           onActiveChange={setIsSearchActive}
           onRevealInTerminal={onRevealInTerminal}
           onAttachToAgent={onAttachToAgent}
