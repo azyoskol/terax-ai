@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { normalizeVimKey } from "./vimKeys";
+import {
+  normalizeVimKey,
+  isPlainVimKey,
+  isPendingGKey,
+  isCapitalGKey,
+} from "./vimKeys";
 
 describe("normalizeVimKey", () => {
   it("maps h to ArrowLeft", () => {
@@ -34,5 +39,68 @@ describe("normalizeVimKey", () => {
   it("passes through uppercase non-vim keys unchanged", () => {
     expect(normalizeVimKey("A")).toBe("A");
     expect(normalizeVimKey("R")).toBe("R");
+  });
+});
+
+function makeKeyLike(
+  key: string,
+  opts: { ctrl?: boolean; alt?: boolean; meta?: boolean; shift?: boolean } = {},
+) {
+  return {
+    key,
+    ctrlKey: opts.ctrl ?? false,
+    altKey: opts.alt ?? false,
+    metaKey: opts.meta ?? false,
+    shiftKey: opts.shift ?? false,
+  };
+}
+
+describe("isPlainVimKey", () => {
+  it("returns true for plain keys", () => {
+    expect(isPlainVimKey(makeKeyLike("j"))).toBe(true);
+    expect(isPlainVimKey(makeKeyLike("g"))).toBe(true);
+    expect(isPlainVimKey(makeKeyLike("G"))).toBe(true);
+  });
+
+  it("returns false for modifier keys", () => {
+    expect(isPlainVimKey(makeKeyLike("j", { ctrl: true }))).toBe(false);
+    expect(isPlainVimKey(makeKeyLike("j", { alt: true }))).toBe(false);
+    expect(isPlainVimKey(makeKeyLike("j", { meta: true }))).toBe(false);
+  });
+});
+
+describe("isPendingGKey", () => {
+  it("returns true for plain g", () => {
+    expect(isPendingGKey(makeKeyLike("g"))).toBe(true);
+  });
+
+  it("returns false for G", () => {
+    expect(isPendingGKey(makeKeyLike("G"))).toBe(false);
+  });
+
+  it("returns false for Ctrl+g", () => {
+    expect(isPendingGKey(makeKeyLike("g", { ctrl: true }))).toBe(false);
+  });
+
+  it("returns false for Alt+g", () => {
+    expect(isPendingGKey(makeKeyLike("g", { alt: true }))).toBe(false);
+  });
+});
+
+describe("isCapitalGKey", () => {
+  it("returns true for plain G", () => {
+    expect(isCapitalGKey(makeKeyLike("G"))).toBe(true);
+  });
+
+  it("returns false for g", () => {
+    expect(isCapitalGKey(makeKeyLike("g"))).toBe(false);
+  });
+
+  it("returns false for Ctrl+G", () => {
+    expect(isCapitalGKey(makeKeyLike("G", { ctrl: true }))).toBe(false);
+  });
+
+  it("returns false for Alt+G", () => {
+    expect(isCapitalGKey(makeKeyLike("G", { alt: true }))).toBe(false);
   });
 });
