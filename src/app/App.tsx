@@ -159,6 +159,7 @@ export default function App() {
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
+  const activeEditorHandleRef = useRef<EditorPaneHandle | null>(null);
   const [gitHistoryHandle, setGitHistoryHandle] =
     useState<GitHistorySearchHandle | null>(null);
   const { zoomIn, zoomOut, zoomReset } = useZoom();
@@ -316,6 +317,10 @@ export default function App() {
     );
     setActiveEditorHandle(editorRefs.current.get(activeId) ?? null);
   }, [activeId, activeLeafId]);
+
+  useEffect(() => {
+    activeEditorHandleRef.current = activeEditorHandle;
+  }, [activeEditorHandle]);
 
   const handleSearchReady = useCallback(
     (leafId: number, addon: SearchAddon) => {
@@ -525,6 +530,21 @@ export default function App() {
     },
     [openFileTab, newMarkdownTab],
   );
+
+  const handleFileOpened = useCallback(() => {
+    let attempts = 0;
+    const tryFocus = () => {
+      activeEditorHandleRef.current?.focus();
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLElement &&
+        (el.closest(".cm-editor") || el.closest("[data-editor]"))
+      )
+        return;
+      if (++attempts < 15) requestAnimationFrame(tryFocus);
+    };
+    requestAnimationFrame(tryFocus);
+  }, []);
 
   const handlePathRenamed = useCallback(
     (from: string, to: string) => {
@@ -1102,6 +1122,7 @@ export default function App() {
                         }
                         activeFilePath={explorerActiveFilePath}
                         onOpenFile={handleOpenFile}
+                        onFileOpened={handleFileOpened}
                         onPathRenamed={handlePathRenamed}
                         onPathDeleted={handlePathDeleted}
                         onRevealInTerminal={cdInNewTab}

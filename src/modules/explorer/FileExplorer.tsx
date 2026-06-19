@@ -55,6 +55,7 @@ type Props = {
   rootPath: string | null;
   activeFilePath?: string | null;
   onOpenFile: (path: string, pin?: boolean) => void;
+  onFileOpened?: () => void;
   onPathRenamed?: (from: string, to: string) => void;
   onPathDeleted?: (path: string) => void;
   onRevealInTerminal?: (path: string) => void;
@@ -201,6 +202,7 @@ export const FileExplorer = memo(
       rootPath,
       activeFilePath,
       onOpenFile,
+      onFileOpened,
       onPathRenamed,
       onPathDeleted,
       onRevealInTerminal,
@@ -397,6 +399,7 @@ export const FileExplorer = memo(
       )
         return;
       if (entryPaths.length === 0) return;
+      if (e.ctrlKey || e.altKey || e.metaKey) return;
 
       const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
       const move = (next: number) => {
@@ -406,7 +409,7 @@ export const FileExplorer = memo(
         requestAnimationFrame(() => scrollEntryIntoView(path));
       };
 
-      const key = vimMode ? normalizeVimKey(e.key) : e.key;
+      const key = vimMode && !e.shiftKey ? normalizeVimKey(e.key) : e.key;
       switch (key) {
         case "ArrowDown":
           e.preventDefault();
@@ -417,13 +420,13 @@ export const FileExplorer = memo(
           move(currentIdx < 0 ? entryPaths.length - 1 : currentIdx - 1);
           break;
         case "ArrowRight": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
+          if (currentIdx < 0) break;
           const path = entryPaths[currentIdx];
           const idx = entryIndexByPath.get(path);
           if (idx === undefined) break;
           const row = rows[idx];
           if (row.kind !== "entry") break;
+          e.preventDefault();
           if (row.isDir) {
             if (!row.isExpanded) tree.toggle(row.path);
             else move(currentIdx + 1);
@@ -431,31 +434,37 @@ export const FileExplorer = memo(
           break;
         }
         case "ArrowLeft": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
+          if (currentIdx < 0) break;
           const path = entryPaths[currentIdx];
           const idx = entryIndexByPath.get(path);
           if (idx === undefined) break;
           const row = rows[idx];
           if (row.kind !== "entry") break;
           if (row.isDir && row.isExpanded) {
+            e.preventDefault();
             tree.toggle(row.path);
           } else {
             const parent = row.path.slice(0, row.path.lastIndexOf("/"));
-            if (parent && parent !== rootPath) setSelectedPath(parent);
+            if (parent && parent !== rootPath) {
+              e.preventDefault();
+              setSelectedPath(parent);
+            }
           }
           break;
         }
         case "Enter": {
-          if (currentIdx < 0) return;
-          e.preventDefault();
+          if (currentIdx < 0) break;
           const path = entryPaths[currentIdx];
           const idx = entryIndexByPath.get(path);
           if (idx === undefined) break;
           const row = rows[idx];
           if (row.kind !== "entry") break;
+          e.preventDefault();
           if (row.isDir) tree.toggle(row.path);
-          else onOpenFile(row.path);
+          else {
+            onOpenFile(row.path);
+            onFileOpened?.();
+          }
           break;
         }
       }
@@ -504,6 +513,7 @@ export const FileExplorer = memo(
       <div
         ref={containerRef}
         className="flex h-full flex-col outline-none"
+        data-file-explorer=""
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
