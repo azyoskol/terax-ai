@@ -267,6 +267,8 @@ export default function App() {
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
+    focusExplorer,
+    restoreEditorFocus,
   } = useSidebarPanel(explorerRef);
 
   const [newEditorOpen, setNewEditorOpen] = useState(false);
@@ -610,6 +612,43 @@ export default function App() {
     (s) => s.explorerGitDecorations,
   );
 
+  const vimMode = usePreferencesStore((s) => s.vimMode);
+  const [terminalPrefixActive, setTerminalPrefixActive] = useState(false);
+  const terminalPrefixRef = useRef(false);
+
+  useEffect(() => {
+    if (!vimMode) return;
+    const onKey = (e: KeyboardEvent) => {
+      const target = (e.target as HTMLElement | null) ?? document.activeElement;
+      const inTerminal = !!(target as HTMLElement | null)?.closest?.(".xterm");
+
+      if (e.ctrlKey && e.code === "Space" && !e.shiftKey && !e.altKey && !e.metaKey) {
+        if (!inTerminal) return;
+        e.preventDefault();
+        e.stopPropagation();
+        terminalPrefixRef.current = true;
+        setTerminalPrefixActive(true);
+        return;
+      }
+
+      if (terminalPrefixRef.current) {
+        switch (e.key) {
+          case "h": focusDirectionalPaneInTab(activeId, "left"); break;
+          case "l": focusDirectionalPaneInTab(activeId, "right"); break;
+          case "j": focusDirectionalPaneInTab(activeId, "down"); break;
+          case "k": focusDirectionalPaneInTab(activeId, "up"); break;
+          case "e": focusExplorer(); break;
+        }
+        terminalPrefixRef.current = false;
+        setTerminalPrefixActive(false);
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+    };
+    window.addEventListener("keydown", onKey, { capture: true });
+    return () => window.removeEventListener("keydown", onKey, { capture: true });
+  }, [vimMode, activeId, focusDirectionalPaneInTab, focusExplorer]);
   const openPreviewTab = useCallback(
     (url: string) => {
       const id = newPreviewTab(url);
@@ -681,6 +720,8 @@ export default function App() {
       "settings.open": () => void openSettingsWindow(),
       "sidebar.toggle": toggleSidebar,
       "explorer.focus": toggleExplorerFocus,
+      "workspace.focusExplorer": focusExplorer,
+      "workspace.focusEditor": restoreEditorFocus,
       "view.zoomIn": zoomIn,
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
@@ -707,6 +748,8 @@ export default function App() {
       askFromSelection,
       toggleSidebar,
       toggleExplorerFocus,
+      focusExplorer,
+      restoreEditorFocus,
       zoomIn,
       zoomOut,
       zoomReset,
@@ -755,9 +798,29 @@ export default function App() {
         // is the always-on toggle and is never claimed by the terminal.
         return inTerminal && !e.shiftKey;
       }
+      if (
+        id === "workspace.focusExplorer" ||
+        id === "workspace.focusEditor"
+      ) {
+        if (!vimMode) return true;
+        const target = (e.target as HTMLElement | null) ?? document.activeElement;
+        if ((target as HTMLElement | null)?.closest?.(".xterm, [data-terminal]")) return true;
+        if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return true;
+        if (id === "workspace.focusExplorer") {
+          const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
+          if (inExplorer) return true;
+          return false;
+        }
+        if (id === "workspace.focusEditor") {
+          const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
+          if (!inExplorer) return true;
+          return false;
+        }
+        return false;
+      }
       return false;
     },
-    [activeTab],
+    [activeTab, vimMode],
   );
 
   useGlobalShortcuts(shortcutHandlers, { isDisabled: shortcutsDisabled });
@@ -1199,6 +1262,7 @@ export default function App() {
               privateActive={
                 activeTab?.kind === "terminal" && activeTab.private === true
               }
+              terminalPrefixActive={terminalPrefixActive}
             />
           )}
 

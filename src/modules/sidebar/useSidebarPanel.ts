@@ -147,6 +147,40 @@ export function useSidebarPanel(
     explorer.focus();
   }, [explorerRef, persistSidebarView, sidebarView]);
 
+  const focusExplorer = useCallback(() => {
+    const panel = sidebarRef.current;
+    const collapsed = panel ? panel.getSize().asPercentage <= 0 : false;
+    if (sidebarView !== "explorer" || collapsed) {
+      if (panel && collapsed) panel.resize(`${sidebarWidthRef.current}px`);
+      if (sidebarView !== "explorer") persistSidebarView("explorer");
+      const active = document.activeElement;
+      explorerReturnFocusRef.current =
+        active instanceof HTMLElement && active !== document.body
+          ? active
+          : null;
+      requestAnimationFrame(() => explorerRef.current?.focus());
+      return;
+    }
+    const active = document.activeElement;
+    explorerReturnFocusRef.current =
+      active instanceof HTMLElement && active !== document.body ? active : null;
+    explorerRef.current?.focus();
+  }, [explorerRef, persistSidebarView, sidebarView]);
+
+  const restoreEditorFocus = useCallback(() => {
+    const target = explorerReturnFocusRef.current;
+    explorerReturnFocusRef.current = null;
+    if (target?.isConnected) {
+      target.focus();
+      return;
+    }
+    const workspace = document.getElementById("workspace");
+    const focusable = workspace?.querySelector<HTMLElement>(
+      ".cm-editor, [data-editor], [tabindex]",
+    );
+    focusable?.focus();
+  }, []);
+
   return {
     sidebarRef,
     sidebarWidthRef,
@@ -156,5 +190,7 @@ export function useSidebarPanel(
     cycleSidebarView,
     persistSidebarWidth,
     toggleExplorerFocus,
+    focusExplorer,
+    restoreEditorFocus,
   };
 }

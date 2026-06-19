@@ -44,7 +44,9 @@ export type ShortcutId =
   | "settings.open"
   | "sidebar.toggle"
   | "editor.undo"
-  | "editor.redo";
+  | "editor.redo"
+  | "workspace.focusExplorer"
+  | "workspace.focusEditor";
 
 export type ShortcutGroup =
   | "General"
@@ -340,6 +342,18 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Redo",
     group: "Editor",
     defaultBindings: [{ [MOD_PROP]: true, key: "y" }],
+  },
+  {
+    id: "workspace.focusExplorer",
+    label: "Focus file explorer (Vim)",
+    group: "View",
+    defaultBindings: [{ ctrl: true, key: "h" }],
+  },
+  {
+    id: "workspace.focusEditor",
+    label: "Focus editor (Vim)",
+    group: "View",
+    defaultBindings: [{ ctrl: true, key: "l" }],
   },
 ];
 

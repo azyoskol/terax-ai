@@ -25,6 +25,7 @@ type Props = {
   /** Only rendered when the AI panel is open and a key is loaded. */
   hasComposer: boolean;
   privateActive: boolean;
+  terminalPrefixActive?: boolean;
 };
 
 export function StatusBar({
@@ -36,6 +37,7 @@ export function StatusBar({
   onOpenMini,
   hasComposer,
   privateActive,
+  terminalPrefixActive,
 }: Props) {
   const panelOpen = useChatStore((s) => s.panelOpen);
   const openPanel = useChatStore((s) => s.openPanel);
@@ -58,6 +60,11 @@ export function StatusBar({
               anything you don't want sent to the model.
             </TooltipContent>
           </Tooltip>
+        ) : null}
+        {terminalPrefixActive ? (
+          <span className="flex shrink-0 cursor-default items-center rounded-full bg-primary/15 px-2 py-0.5 text-[10.5px] font-medium text-primary">
+            PFX
+          </span>
         ) : null}
       </div>
       <div className="flex shrink-0 items-center gap-1.5">
