@@ -237,6 +237,19 @@ function centerDistance(a: PaneRect, b: PaneRect): number {
   return Math.sqrt((ax - bx) ** 2 + (ay - by) ** 2);
 }
 
+function axisDistance(a: PaneRect, b: PaneRect, direction: Direction): number {
+  switch (direction) {
+    case "right":
+      return b.x - (a.x + a.width);
+    case "left":
+      return a.x - (b.x + b.width);
+    case "down":
+      return b.y - (a.y + a.height);
+    case "up":
+      return a.y - (b.y + b.height);
+  }
+}
+
 function treeDistance(
   tree: PaneNode,
   fromId: PaneId,
@@ -274,9 +287,10 @@ export function findDirectionalPane(
 
   type Candidate = {
     id: PaneId;
+    axisDist: number;
+    perpOverlap: number;
     dist: number;
     tdist: number;
-    perpOverlap: number;
   };
   const candidates: Candidate[] = [];
 
@@ -299,23 +313,24 @@ export function findDirectionalPane(
 
     candidates.push({
       id: r.id,
+      axisDist: axisDistance(current, r, direction),
+      perpOverlap: overlap(current, r, perpAxis),
       dist: centerDistance(current, r),
       tdist: treeDistance(tree, currentId, r.id),
-      perpOverlap: overlap(current, r, perpAxis),
     });
   }
 
   if (candidates.length === 0) return currentId;
 
   candidates.sort((a, b) => {
+    if (a.axisDist !== b.axisDist) return a.axisDist - b.axisDist;
     if (a.perpOverlap > 0 && b.perpOverlap > 0) {
-      if (a.tdist !== b.tdist) return a.tdist - b.tdist;
-      return a.dist - b.dist;
+      return b.perpOverlap - a.perpOverlap;
     }
     if (a.perpOverlap > 0) return -1;
     if (b.perpOverlap > 0) return 1;
-    if (a.tdist !== b.tdist) return a.tdist - b.tdist;
-    return a.dist - b.dist;
+    if (a.dist !== b.dist) return a.dist - b.dist;
+    return a.tdist - b.tdist;
   });
 
   return candidates[0].id;

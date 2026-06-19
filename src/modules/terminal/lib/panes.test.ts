@@ -189,12 +189,12 @@ describe("findDirectionalPane", () => {
     // └── leaf 4 (right column, full height)
     const tree = row(leaf(1), col(leaf(2), leaf(3)), leaf(4));
 
-    it("1(right) -> 4 (full height overlap)", () => {
-      expect(findDirectionalPane(tree, 1, "right")).toBe(4);
+    it("1(right) -> 2 (immediate spatial neighbor)", () => {
+      expect(findDirectionalPane(tree, 1, "right")).toBe(2);
     });
 
-    it("4(left) -> 1 (full height overlap)", () => {
-      expect(findDirectionalPane(tree, 4, "left")).toBe(1);
+    it("4(left) -> 2 (equidistant, lower id wins)", () => {
+      expect(findDirectionalPane(tree, 4, "left")).toBe(2);
     });
 
     it("2(right) -> 4", () => {
@@ -273,9 +273,8 @@ describe("findDirectionalPane", () => {
       expect(findDirectionalPane(tree, 1, "right")).toBe(4);
     });
 
-    it("2(right) -> 4 or 5 (no exact match, nearest by distance)", () => {
-      const result = findDirectionalPane(tree, 2, "right");
-      expect(result === 4 || result === 5).toBe(true);
+    it("2(right) -> 4 (y-overlap with leaf 4)", () => {
+      expect(findDirectionalPane(tree, 2, "right")).toBe(4);
     });
 
     it("3(right) -> 5 (bottom overlap)", () => {
