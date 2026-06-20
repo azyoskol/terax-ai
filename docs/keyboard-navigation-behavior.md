@@ -216,12 +216,12 @@ File navigation (`j`/`k`/`gg`/`G`/`l`/`Space`) does nothing when there are no ch
 | `d` / `D` | Request discard for unstaged changes (opens confirmation dialog) |
 | `Ctrl/Cmd+Enter` | Commit (when in commit message textarea) |
 | `Ctrl/Cmd+G` | Generate commit message (when AI available) |
-| `Escape` | Return focus to panel container (when in commit textarea, vim mode) |
+| `Escape` | Return focus to panel container (when in commit textarea) |
 
 ### Skipped conditions
 All key handling is skipped when the event target is a `TEXTAREA`, `INPUT`, or
-`contentEditable` element (except `Ctrl+Enter` and `Ctrl+G` which are handled
-inside the commit textarea itself).
+`contentEditable` element (except `Ctrl+Enter`, `Ctrl+G`, and `Escape` which are
+handled inside the commit textarea itself).
 
 ### Discard confirmation behavior
 

@@ -128,7 +128,7 @@ All focus detection uses `data-*` attributes queried via `element.closest()` or 
 | `file-explorer` | `data-file-explorer` focus | `useVimTreeNavigation` + local keys |
 | `explorer-search` | `data-file-explorer-search` focus | Local handler + `useVimListNavigation` |
 | `source-control` | `data-source-control` focus | Local handler with `interpretVimListKey` |
-| `git-history` | `data-git-history` focus | Local handler with `interpretVimListKey` |
+| `git-history` | `data-git-history` focus | `useScopedKeymap` (migrated from `interpretVimListKey`) |
 | `space-switcher` | Popover open | `useVimListNavigation` on window |
 | `buffer-picker` | Popover open | `useVimListNavigation` on window |
 | `dialog` | Alert dialog open | Radix focus trap or `handleConfirmDialogKeyDown` |
@@ -189,43 +189,43 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### Surface registry
 
-**Current:** `KeyboardSurfaceRegistry` exists. App.tsx registers editor + explorer in a `useEffect([], [])`. The registration may be stale because refs may not exist when the effect runs.
+**Current:** `KeyboardSurfaceRegistry` exists. App.tsx registers only the editor surface in a `useEffect([], [])` (stale; TODO: migrate to EditorPane). GitHistory, SourceControl, and FileExplorer self-register via `useRegisterSurface` in their component bodies.
 
 **Target:** Each focusable surface self-registers via `useRegisterSurface`.
 
-**Gap:** Registration is centralized in App and possibly stale. No surface uses `useRegisterSurface`.
+**Gap:** Editor registration still in App and potentially stale. MarkdownPreview and SpaceSwitcher are not surface-registry based.
 
-**Next step:** Move registration into surface components one by one, starting with GitHistoryPane (clear root element, simple registration).
+**Next step:** Migrate editor registration into EditorPane via `useRegisterSurface`. Add MarkdownPreview and SpaceSwitcher registration.
 
 ### Scoped keymaps
 
-**Current:** `useScopedKeymap` supports modifiers, `gg` sequences, strict scope behavior (`activeWhenNoSurface: false` by default), and help generation from binding descriptors. Pure helpers are in `scopedKeymapCore.ts`. Sequence bug fixed (previously `armSequence` cleared state immediately). Not used by any panel yet.
+**Current:** `useScopedKeymap` supports modifiers, `gg` sequences, strict scope behavior (`activeWhenNoSurface: false` by default), and help generation from binding descriptors. Pure helpers are in `scopedKeymapCore.ts`. Sequence bug fixed (previously `armSequence` cleared state immediately). **Adopted by GitHistory**; SourceControl and FileExplorer still use local handlers.
 
 **Target:** Panels use scoped keymaps for their key handling.
 
-**Gap:** Not adopted yet. No priority system between keymaps. No capture/bubble configuration.
+**Gap:** SourceControl and FileExplorer not yet migrated. No priority system between keymaps. No capture/bubble configuration.
 
-**Next step:** Migrate GitHistory first (has clear root, finite keymap, existing help overlay).
+**Next step:** Migrate SourceControl key handling to `useScopedKeymap`.
 
 ### Help overlays
 
-**Current:** `KeyboardHelpOverlay` renders a list of `{key, description}`. `getBindingHelp()` can generate help from binding descriptors. GitHistory passes a static array. SourceControl and FileExplorer have inline help panels.
+**Current:** `KeyboardHelpOverlay` renders a list of `{key, description}`. `getBindingHelp()` generates help from binding descriptors. **GitHistory uses `getBindingHelp(gitHistoryBindings)`** — help is driven by the binding definitions, not a separate array. SourceControl and FileExplorer still use manually maintained inline help panels.
 
-**Target:** Help text generated from binding definitions.
+**Target:** Help text generated from binding definitions for all surfaces.
 
-**Gap:** Panels pass help manually. SourceControl and FileExplorer use different help UI (inline panels, not modal overlays).
+**Gap:** SourceControl and FileExplorer help text is manually maintained and not derived from binding descriptors.
 
-**Next step:** Keep as-is for now; the modal overlay works for GitHistory.
+**Next step:** Derive SourceControl help from binding descriptors when migrating to `useScopedKeymap`.
 
 ### Panel-specific key handlers
 
-**Current:** Each panel has its own `handleKeyDown` using `interpretVimListKey` or custom logic.
+**Current:** GitHistory uses `useScopedKeymap` with named action callbacks, scope filtering, `gg` sequence, and ArrowKey aliases. SourceControl and FileExplorer still have their own `handleKeyDown` using `interpretVimListKey` / `useVimTreeNavigation`.
 
-**Target:** Panels use `useScopedKeymap` with shared vim interpretation.
+**Target:** All panels use `useScopedKeymap` with shared vim interpretation.
 
-**Gap:** `useScopedKeymap` doesn't support Vim sequences yet, so panels can't migrate.
+**Gap:** SourceControl and FileExplorer not yet migrated. No capture/bubble priority config.
 
-**Next step:** Add sequence support to `useScopedKeymap` first.
+**Next step:** Migrate SourceControl to `useScopedKeymap`, then FileExplorer.
 
 ### Dialog/popover focus restore
 

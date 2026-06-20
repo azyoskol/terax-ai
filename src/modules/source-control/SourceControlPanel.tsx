@@ -234,7 +234,20 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     return null;
   }, [scm.actionError, scm.actionMessage, scm.remoteError]);
 
+  const focusPanelRoot = useCallback(() => {
+    requestAnimationFrame(() => {
+      panelRootRef.current?.focus();
+    });
+  }, []);
+
   const handleCommitShortcut = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      event.currentTarget.blur();
+      focusPanelRoot();
+      return;
+    }
     if (
       event.key === "Enter" &&
       (event.metaKey || event.ctrlKey) &&
