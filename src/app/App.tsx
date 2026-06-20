@@ -32,7 +32,7 @@ import {
   type EditorPaneHandle,
 } from "@/modules/editor";
 import { FileExplorer, type FileExplorerHandle } from "@/modules/explorer";
-import { isEditableTarget, isTerminalTarget } from "@/modules/explorer/lib/vimKeys";
+
 import type { GitHistorySearchHandle } from "@/modules/git-history";
 import {
   Header,
@@ -690,22 +690,6 @@ export default function App() {
     window.addEventListener("keydown", onKey, { capture: true });
     return () => window.removeEventListener("keydown", onKey, { capture: true });
   }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer, setSwitcherOpen, cycleSidebarView, stepSwitcher]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Tab") return;
-      const target = (e.target as HTMLElement | null) ?? document.activeElement;
-      if (isTerminalTarget(target)) return;
-      if (isEditableTarget(target)) return;
-      if (target?.closest?.(".cm-editor")) return;
-      e.preventDefault();
-      e.stopPropagation();
-      if (e.shiftKey) stepSwitcher(-1);
-      else stepSwitcher(1);
-    };
-    window.addEventListener("keydown", onKey, { capture: true });
-    return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [stepSwitcher]);
 
   const openPreviewTab = useCallback(
     (url: string) => {

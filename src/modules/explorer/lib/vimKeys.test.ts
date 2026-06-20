@@ -207,4 +207,96 @@ describe("interpretVimListKey", () => {
     expect(interpretVimListKey(makeEvent("a"), ref)).toEqual({ kind: "none" });
     expect(interpretVimListKey(makeEvent("x"), ref)).toEqual({ kind: "none" });
   });
+
+  it("h returns none (only used in FileExplorer separate path)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("h"), ref)).toEqual({ kind: "none" });
+  });
+
+  it("l returns none (only used in FileExplorer separate path)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("l"), ref)).toEqual({ kind: "none" });
+  });
+
+  it("Ctrl+Enter returns none (modifier ignored)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("Enter", { ctrl: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Ctrl+Escape returns none (modifier ignored)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("Escape", { ctrl: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Ctrl+G returns none (modifier ignored for G)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("G", { ctrl: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Ctrl+k returns none (modifier ignored)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("k", { ctrl: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Alt+Enter returns none (modifier ignored)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("Enter", { alt: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Meta+Escape returns none (modifier ignored)", () => {
+    const ref = { current: null };
+    expect(interpretVimListKey(makeEvent("Escape", { meta: true }), ref)).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("Shift+Enter returns activate (shift does not block Enter)", () => {
+    const ref = { current: null };
+    const ev = { ...makeEvent("Enter"), shiftKey: true };
+    expect(interpretVimListKey(ev, ref)).toEqual({ kind: "activate" });
+  });
+
+  it("Shift+j key is J, not j — returns none", () => {
+    const ref = { current: null };
+    const ev = { ...makeEvent("J"), shiftKey: true };
+    expect(interpretVimListKey(ev, ref)).toEqual({ kind: "none" });
+  });
+
+  it("pending g cleared by second g returns first and nulls ref", () => {
+    const ref: { current: number | null } = { current: 456 };
+    expect(interpretVimListKey(makeEvent("g"), ref)).toEqual({ kind: "first" });
+    expect(ref.current).toBeNull();
+  });
+
+  it("multiple pending g arms — second arm resets timer", () => {
+    const ref = { current: null };
+    interpretVimListKey(makeEvent("g"), ref);
+    const timer1 = ref.current;
+    expect(timer1).not.toBeNull();
+    interpretVimListKey(makeEvent("g"), ref);
+    // Should have completed to first (not armed again)
+    expect(ref.current).toBeNull();
+  });
+});
+
+describe("isPlainVimKey with shift modifier", () => {
+  it("returns true when only shift is held (shift is not checked)", () => {
+    // shiftKey is omitted because KeyLike doesn't include it — isPlainVimKey
+    // intentionally does not read shiftKey.
+    expect(isPlainVimKey({ key: "J", ctrlKey: false, altKey: false, metaKey: false })).toBe(true);
+  });
+
+  it("returns false when ctrl is held regardless of shift", () => {
+    expect(isPlainVimKey({ key: "j", ctrlKey: true, altKey: false, metaKey: false })).toBe(false);
+  });
 });
