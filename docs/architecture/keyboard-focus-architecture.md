@@ -7,7 +7,7 @@
 | Shared focus helpers | **Adopted in App + targets** | `focusWithRetry`, `focusEditorWithRetry`, `focusElementBySelectorWithRetry` replace inline retry loops. More call sites can migrate later. |
 | Surface registry | **Foundation only** | `KeyboardSurfaceRegistry` exists. App registers editor + explorer, but registration is stale (refs may not exist when the `[]` effect runs). No other surface registers. |
 | Surface context / `useRegisterSurface` | **Foundation only** | Hook exists but is not used by any surface component. |
-| Scoped keymap | **MVP only** | `useScopedKeymap` supports single-key bindings. No modifier model, no `gg`/sequence support, no priority system. Not used by any panel. |
+| Scoped keymap | **Foundation improved, not adopted** | `useScopedKeymap` now supports modifiers, `gg` sequences, strict scope behavior, and help generation from binding descriptors. Not yet used by any panel. |
 | Help overlay | **UI component only** | `KeyboardHelpOverlay` renders a list of `{key, description}`. Help is still passed manually as a static array; not generated from binding definitions. |
 | GitHistory | **Partial** | Uses shared `KeyboardHelpOverlay` and shared `isEditableTarget`. Key handling is still entirely local (`handleKeyDown` with `interpretVimListKey`). |
 | SourceControl | **Local handler** | Uses shared `isEditableTarget` guard. All key handling remains local. |
@@ -199,21 +199,21 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### Scoped keymaps
 
-**Current:** `useScopedKeymap` supports single-key bindings with scope detection. Not used by any panel.
+**Current:** `useScopedKeymap` supports modifiers, `gg` sequences, strict scope behavior (`activeWhenNoSurface: false` by default), and help generation from binding descriptors. Not used by any panel yet.
 
-**Target:** Panels use scoped keymaps for their key handling, with Vim sequence support.
+**Target:** Panels use scoped keymaps for their key handling.
 
-**Gap:** No modifier model, no `gg`/sequence support, no priority system. Not adopted yet.
+**Gap:** Not adopted yet. No priority system between keymaps. No capture/bubble configuration.
 
-**Next step:** Add modifier/sequence support before migrating any panel.
+**Next step:** Migrate GitHistory first (has clear root, finite keymap, existing help overlay).
 
 ### Help overlays
 
-**Current:** `KeyboardHelpOverlay` renders a list of `{key, description}`. GitHistory passes a static array. SourceControl and FileExplorer have inline help panels.
+**Current:** `KeyboardHelpOverlay` renders a list of `{key, description}`. `getBindingHelp()` can generate help from binding descriptors. GitHistory passes a static array. SourceControl and FileExplorer have inline help panels.
 
 **Target:** Help text generated from binding definitions.
 
-**Gap:** Help is manually maintained. SourceControl and FileExplorer use different help UI (inline panels, not modal overlays).
+**Gap:** Panels pass help manually. SourceControl and FileExplorer use different help UI (inline panels, not modal overlays).
 
 **Next step:** Keep as-is for now; the modal overlay works for GitHistory.
 
@@ -253,15 +253,13 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### `useScopedKeymap` limitations
 
-1. Matches only `event.key` — no modifier descriptor model
-2. No `gg` / multi-key sequence support
-3. No priority between keymaps
-4. No capture/bubble configuration
-5. Risky behavior when no surface is focused (fires for all surfaces)
-6. No pending-g cleanup integration
-7. Help is not automatically tied to actual bindings
-8. Does not replace `interpretVimListKey` yet
-9. Attaches to `window` via `addEventListener` — no component-level scoping
+1. Not adopted by any panel yet — foundation only
+2. No priority system between keymaps
+3. No capture/bubble configuration (always uses bubble phase on window)
+4. Help generation is available from binding descriptors, but panels do not use it yet
+5. Does not replace `interpretVimListKey` yet — panels still use their own vim handling
+6. Sequence support is simple (same-scope `gg` style) — no arbitrary trie for complex multi-key combos
+7. Attaches to `window` via `addEventListener` — no component-level scoping
 
 ### `KeyboardSurfaceRegistry` limitations
 
@@ -276,6 +274,17 @@ No formal scope registry. Detection is ad-hoc via:
 1. SourceControl and FileExplorer use inline help panels, not the shared component
 2. Help text is manually maintained, not derived from binding definitions
 3. Help items don't distinguish between vim-mode and non-vim-mode bindings
+
+### Migration note: next candidate for adoption
+
+**GitHistory** is the best first candidate for `useScopedKeymap` adoption because it has:
+- Clear focus root `[data-git-history]`
+- Finite keymap (j/k, gg/G, Enter, Space, r, o, y, ?, Esc)
+- Existing `selectedRow` state (no complex tree)
+- Existing help overlay (already uses `KeyboardHelpOverlay`)
+- No complex tree expand/collapse logic
+
+SourceControl should be migrated only after GitHistory is stable and proven.
 
 ---
 
@@ -323,20 +332,36 @@ type KeyboardSurfaceHandle = {
 };
 ```
 
-### 7.3 Scoped Keymap (Future)
+### 7.3 Scoped Keymap (Implemented, Not Adopted)
 
 ```typescript
 type KeyBinding = {
   key: string;
-  modifiers?: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean };
-  sequence?: string;  // e.g., "gg" for two-key vim combo
   description: string;
+  helpKey?: string;           // display label for help
+  sequence?: string;          // e.g., "gg"
+  modifiers?: {
+    ctrl?: boolean;
+    meta?: boolean;
+    alt?: boolean;
+    shift?: boolean;
+  };
   action: (event: KeyboardEvent) => void;
   when?: () => boolean;
   preventDefault?: boolean;
   stopPropagation?: boolean;
+  hidden?: boolean;           // exclude from help
 };
 ```
+
+**Available options:**
+- `activeWhenNoSurface` — default `false`, strict scope behavior
+- `sequenceTimeoutMs` — default `700ms`
+
+**Pure helpers exported:**
+- `matchesKeyBinding(event, binding)` — check if event matches binding
+- `matchesModifiers(event, modifiers)` — check modifier match
+- `getBindingHelp(bindings)` — generate help items from descriptors
 
 ### 7.4 Shared Keymap Help
 
