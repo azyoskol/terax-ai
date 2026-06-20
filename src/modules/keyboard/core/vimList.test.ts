@@ -314,6 +314,33 @@ describe("interpretVimListKey", () => {
     expect(result).toEqual({ kind: "none" });
     expect(ref.current).toBeNull();
   });
+
+  it("g then Ctrl+r clears pending g and returns none", () => {
+    const ref = { current: null };
+    interpretVimListKey(makeEvent("g"), ref);
+    expect(ref.current).not.toBeNull();
+    const result = interpretVimListKey(makeEvent("r", { ctrl: true }), ref);
+    expect(result).toEqual({ kind: "none" });
+    expect(ref.current).toBeNull();
+  });
+
+  it("g then Ctrl+R clears pending g and returns none", () => {
+    const ref = { current: null };
+    interpretVimListKey(makeEvent("g"), ref);
+    expect(ref.current).not.toBeNull();
+    const result = interpretVimListKey(makeEvent("R", { ctrl: true }), ref);
+    expect(result).toEqual({ kind: "none" });
+    expect(ref.current).toBeNull();
+  });
+
+  it("g then Meta+r clears pending g and returns none", () => {
+    const ref = { current: null };
+    interpretVimListKey(makeEvent("g"), ref);
+    expect(ref.current).not.toBeNull();
+    const result = interpretVimListKey(makeEvent("r", { meta: true }), ref);
+    expect(result).toEqual({ kind: "none" });
+    expect(ref.current).toBeNull();
+  });
 });
 
 describe("isPlainVimKey with shift modifier", () => {

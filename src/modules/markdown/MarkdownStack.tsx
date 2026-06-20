@@ -29,6 +29,7 @@ export function MarkdownStack({ tabs, activeId, onSetMarkdownView }: Props) {
             <MarkdownPreviewPane
               path={t.path}
               visible={visible}
+              tabId={t.id}
               onSetView={(mode) => onSetMarkdownView(t.id, mode)}
             />
           </div>

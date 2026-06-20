@@ -415,55 +415,57 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         return;
       }
 
-      if (vimNavigationEnabled && isPlainVimKey(event)) {
+      if (vimNavigationEnabled) {
         const action = interpretVimListKey(event.nativeEvent, pendingGRef);
-        switch (action.kind) {
-          case "next":
-            event.preventDefault();
-            moveFocus(1);
-            return;
-          case "prev":
-            event.preventDefault();
-            moveFocus(-1);
-            return;
-          case "first":
-            event.preventDefault();
-            focusFirstChange();
-            return;
-          case "last":
-            event.preventDefault();
-            focusLastChange();
-            return;
-          case "none":
-          case "armG":
-            break;
-        }
-        if (event.key === "r" || event.key === "R") {
-          event.preventDefault();
-          handleRefresh();
-          return;
-        }
-        if (event.key === "c") {
-          event.preventDefault();
-          focusCommitInput();
-          return;
-        }
-        if (event.key === "l") {
-          const entry = focusedEntry();
-          if (entry) {
-            event.preventDefault();
-            void scm.selectFile(entry);
-            focusDiffOrEditor();
+        if (isPlainVimKey(event)) {
+          switch (action.kind) {
+            case "next":
+              event.preventDefault();
+              moveFocus(1);
+              return;
+            case "prev":
+              event.preventDefault();
+              moveFocus(-1);
+              return;
+            case "first":
+              event.preventDefault();
+              focusFirstChange();
+              return;
+            case "last":
+              event.preventDefault();
+              focusLastChange();
+              return;
+            case "none":
+            case "armG":
+              break;
           }
-          return;
-        }
-        if (event.key === " ") {
-          const entry = focusedEntry();
-          if (entry) {
+          if (event.key === "r" || event.key === "R") {
             event.preventDefault();
-            void scm.toggleStageFile(entry);
+            handleRefresh();
+            return;
           }
-          return;
+          if (event.key === "c") {
+            event.preventDefault();
+            focusCommitInput();
+            return;
+          }
+          if (event.key === "l") {
+            const entry = focusedEntry();
+            if (entry) {
+              event.preventDefault();
+              void scm.selectFile(entry);
+              focusDiffOrEditor();
+            }
+            return;
+          }
+          if (event.key === " ") {
+            const entry = focusedEntry();
+            if (entry) {
+              event.preventDefault();
+              void scm.toggleStageFile(entry);
+            }
+            return;
+          }
         }
         return;
       }

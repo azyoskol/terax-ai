@@ -169,6 +169,38 @@ export default function App() {
   const terminalRefs = useRef<Map<number, TerminalPaneHandle>>(new Map());
   const editorRefs = useRef<Map<number, EditorPaneHandle>>(new Map());
   const previewRefs = useRef<Map<number, PreviewPaneHandle>>(new Map());
+
+  const setMarkdownViewAndFocus = useCallback(
+    (id: number, mode: "rendered" | "raw") => {
+      setMarkdownView(id, mode);
+      if (mode === "raw") {
+        let attempts = 0;
+        const tryFocus = () => {
+          const handle = editorRefs.current.get(id);
+          if (handle) {
+            handle.focus();
+            return;
+          }
+          if (++attempts < 10) requestAnimationFrame(tryFocus);
+        };
+        requestAnimationFrame(tryFocus);
+      } else {
+        let attempts = 0;
+        const tryFocus = () => {
+          const el = document.querySelector(
+            `[data-markdown-preview][data-tab-id="${id}"]`,
+          ) as HTMLElement | null;
+          if (el) {
+            el.focus();
+            return;
+          }
+          if (++attempts < 10) requestAnimationFrame(tryFocus);
+        };
+        requestAnimationFrame(tryFocus);
+      }
+    },
+    [setMarkdownView],
+  );
   const [activeEditorHandle, setActiveEditorHandle] =
     useState<EditorPaneHandle | null>(null);
   const activeEditorHandleRef = useRef<EditorPaneHandle | null>(null);
@@ -741,9 +773,9 @@ export default function App() {
         const active = tabsRef.current.find((t) => t.id === activeId);
         if (!active) return;
         if (active.kind === "markdown") {
-          setMarkdownView(active.id, "raw");
+          setMarkdownViewAndFocus(active.id, "raw");
         } else if (active.kind === "editor" && isMarkdownPath(active.path)) {
-          setMarkdownView(active.id, "rendered");
+          setMarkdownViewAndFocus(active.id, "rendered");
         }
       },
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
@@ -773,6 +805,7 @@ export default function App() {
       zoomIn,
       zoomOut,
       zoomReset,
+      setMarkdownViewAndFocus,
     ],
   );
 
@@ -1133,7 +1166,7 @@ export default function App() {
             openSpacesOverview: () => setSwitcherOpen(true),
             newSpace: () => void handleNewSpace(),
             switchSpace: (id) => useSpaces.getState().setActive(id),
-            setMarkdownView,
+            setMarkdownView: setMarkdownViewAndFocus,
           })
         : [],
     [
@@ -1156,6 +1189,7 @@ export default function App() {
       askFromSelection,
       activeSpaceId,
       handleNewSpace,
+      setMarkdownViewAndFocus,
     ],
   );
 
@@ -1297,7 +1331,7 @@ export default function App() {
                       onAiDiffReject={(id) => respondToApproval(id, false)}
                       onOpenCommitFile={openCommitFileDiffTab}
                       onGitHistorySearchHandle={setGitHistoryHandle}
-                      onSetMarkdownView={setMarkdownView}
+                      onSetMarkdownView={setMarkdownViewAndFocus}
                     />
                   </div>
 

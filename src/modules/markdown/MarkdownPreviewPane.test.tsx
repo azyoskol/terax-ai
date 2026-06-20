@@ -47,6 +47,7 @@ describe("MarkdownPreviewPane", () => {
     const el = createElement(MarkdownPreviewPane, {
       path: "/test.md",
       visible: true,
+      tabId: 1,
       onSetView: vi.fn(),
     });
     const html = renderToString(el);
@@ -57,10 +58,22 @@ describe("MarkdownPreviewPane", () => {
     const el = createElement(MarkdownPreviewPane, {
       path: "/test.md",
       visible: true,
+      tabId: 1,
       onSetView: vi.fn(),
     });
     const html = renderToString(el);
     expect(html).toContain("data-markdown-preview");
+  });
+
+  it("has data-tab-id attribute", () => {
+    const el = createElement(MarkdownPreviewPane, {
+      path: "/test.md",
+      visible: true,
+      tabId: 42,
+      onSetView: vi.fn(),
+    });
+    const html = renderToString(el);
+    expect(html).toContain('data-tab-id="42"');
   });
 });
 

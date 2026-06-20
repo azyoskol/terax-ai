@@ -24,12 +24,13 @@ type Status =
 type Props = {
   path: string;
   visible: boolean;
+  tabId: number;
   onSetView: (mode: "rendered" | "raw") => void;
 };
 
 const components = { code: MarkdownCode };
 
-export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
+export function MarkdownPreviewPane({ path, visible, tabId, onSetView }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
   const scrollRef = useRef<HTMLDivElement>(null);
   const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
@@ -96,6 +97,7 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
         tabIndex={0}
         className="flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
         data-markdown-preview
+        data-tab-id={tabId}
         onKeyDown={handleKeyDown}
       >
         <div className="px-8 py-6">
