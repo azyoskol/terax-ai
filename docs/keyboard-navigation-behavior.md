@@ -189,7 +189,33 @@ Vim and non-vim key handling is skipped when the event target is a
 
 ---
 
-## 7. Shared Utilities (src/modules/explorer/lib/vimKeys.ts)
+## 7. SpaceSwitcher
+
+| Key | Behavior |
+|---|---|
+| `j` | Select next item (space or tab, clamped) |
+| `k` | Select previous item (clamped) |
+| `g` (once) | Arms pending-g (800ms timeout). On second `g`: jump to first item |
+| `G` | Jump to last item |
+| `Enter` | Activate selected item (switch space / jump to tab) and close |
+| `Escape` | Close switcher without activating |
+| `h` | Collapse the selected space (if expanded) |
+| `l` | Expand the selected space (if collapsed) |
+
+### Dispatch details
+
+- Uses `interpretVimListKey` for `j`/`k`/`gg`/`G`/`Enter`/`Escape`, same pattern as BufferTabPicker.
+- `h` and `l` are handled independently (after `interpretVimListKey` returns `none`) — they toggle the expanded/collapsed state of the currently selected space.
+- Skips all handling if the event target is editable (`isEditableTarget`).
+- Enter/Escape activate even when `vimNavigationEnabled` is off.
+- `j`/`k`/`gg`/`G`/`h`/`l` only work when `vimNavigationEnabled` is on.
+- Cleans up the pending-g timeout on unmount.
+- Resets selection index to 0 on open.
+- Scrolls the selected item into view.
+
+---
+
+## 8. Shared Utilities (src/modules/explorer/lib/vimKeys.ts)
 
 ### `interpretVimListKey(e, pendingGRef)`
 
@@ -202,11 +228,12 @@ Vim and non-vim key handling is skipped when the event target is a
 | `G` (plain) | `{ kind: "last" }` |
 | `Enter` (plain) | `{ kind: "activate" }` |
 | `Escape` (plain) | `{ kind: "escape" }` |
-| any key with `ctrlKey`, `altKey`, or `metaKey` | `{ kind: "none" }` |
-| other keys | `{ kind: "none" }` |
+| any key with `ctrlKey`, `altKey`, or `metaKey` | `{ kind: "none" }` (pending g cleared) |
+| other keys | `{ kind: "none" }` (pending g cleared) |
 
-Any non-g key clears the pending-g timeout. Enter clears it too. Returns `none`
-for unrecognized keys.
+Any non-`g` key clears the pending-g timeout before evaluating the action
+(including modified keys, `G`, `Enter`, `Escape`, `j`, `k`, and unknown keys).
+Returns `none` for unrecognized keys.
 
 ### `normalizeVimKey(key)`
 

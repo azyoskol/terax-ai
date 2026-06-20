@@ -72,8 +72,6 @@ export function interpretVimListKey(
   e: KeyboardEvent | React.KeyboardEvent,
   pendingGRef: React.MutableRefObject<number | null>,
 ): VimListAction {
-  if (e.ctrlKey || e.altKey || e.metaKey) return { kind: "none" };
-
   if (isPlainVimKey(e) && e.key === "g") {
     if (pendingGRef.current) {
       clearTimeout(pendingGRef.current);
@@ -86,12 +84,14 @@ export function interpretVimListKey(
     return { kind: "armG" };
   }
 
-  if (isCapitalGKey(e)) return { kind: "last" };
-
   if (pendingGRef.current) {
     clearTimeout(pendingGRef.current);
     pendingGRef.current = null;
   }
+
+  if (e.ctrlKey || e.altKey || e.metaKey) return { kind: "none" };
+
+  if (isCapitalGKey(e)) return { kind: "last" };
 
   if (e.key === "Enter") return { kind: "activate" };
   if (e.key === "Escape") return { kind: "escape" };
