@@ -16,9 +16,7 @@ import {
   PlusSignIcon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
-import {
-  isEditableTarget,
-} from "@/modules/keyboard/core/vimList";
+import { isEditableTarget } from "@/modules/keyboard/core/targets";
 import { useVimListNavigation } from "@/modules/keyboard/hooks/useVimListNavigation";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useEffect, useMemo, useRef, useState } from "react";

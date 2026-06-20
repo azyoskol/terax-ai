@@ -82,6 +82,7 @@ export function useVimListNavigation(options: VimListNavigationOptions) {
           if (!enabled) return;
           e.preventDefault();
           e.stopPropagation();
+          if (itemCount === 0) return;
           setSelectedIndex(0);
           return;
         }
@@ -89,6 +90,7 @@ export function useVimListNavigation(options: VimListNavigationOptions) {
           if (!enabled) return;
           e.preventDefault();
           e.stopPropagation();
+          if (itemCount === 0) return;
           setSelectedIndex(itemCount - 1);
           return;
         }

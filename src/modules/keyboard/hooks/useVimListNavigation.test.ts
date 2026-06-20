@@ -180,13 +180,20 @@ describe("useVimListNavigation", () => {
       const hook = renderHook(createOptions());
       hook.onKeyDown(makeEvent("g"));
       hook.onKeyDown(makeEvent("k", { ctrl: true }));
-      // Should not move
       expect(index).toBe(0);
-      // Pending g should be cleared (timeout shouldn't fire)
       vi.advanceTimersByTime(900);
-      // Still no movement
       expect(index).toBe(0);
       vi.useRealTimers();
+    });
+
+    it("g then Ctrl+k then g does not complete gg", () => {
+      index = 3;
+      const hook = renderHook(createOptions());
+      hook.onKeyDown(makeEvent("g"));
+      hook.onKeyDown(makeEvent("k", { ctrl: true }));
+      hook.onKeyDown(makeEvent("g"));
+      expect(index).toBe(3);
+      expect(setSelectedIndex).not.toHaveBeenCalledWith(0);
     });
   });
 
@@ -246,6 +253,19 @@ describe("useVimListNavigation", () => {
     it("k does nothing when itemCount is 0", () => {
       const hook = renderHook(createOptions({ itemCount: 0 }));
       hook.onKeyDown(makeEvent("k"));
+      expect(index).toBe(0);
+    });
+
+    it("G does nothing when itemCount is 0", () => {
+      const hook = renderHook(createOptions({ itemCount: 0 }));
+      hook.onKeyDown(makeEvent("G"));
+      expect(index).toBe(0);
+    });
+
+    it("gg does nothing when itemCount is 0", () => {
+      const hook = renderHook(createOptions({ itemCount: 0 }));
+      hook.onKeyDown(makeEvent("g"));
+      hook.onKeyDown(makeEvent("g"));
       expect(index).toBe(0);
     });
   });

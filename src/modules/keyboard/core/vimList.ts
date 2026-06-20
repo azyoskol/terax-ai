@@ -29,25 +29,7 @@ export function isCapitalGKey(e: KeyLike): boolean {
   return !e.ctrlKey && !e.altKey && !e.metaKey && e.key === "G";
 }
 
-/** Check if a DOM target is an editable input/textarea/contentEditable. */
-export function isEditableTarget(
-  target: EventTarget | HTMLElement | null,
-): boolean {
-  if (!target || !(target instanceof HTMLElement)) return false;
-  return (
-    target.tagName === "INPUT" ||
-    target.tagName === "TEXTAREA" ||
-    target.isContentEditable
-  );
-}
-
-/** Check if a DOM target is inside an xterm terminal. */
-export function isTerminalTarget(
-  target: EventTarget | HTMLElement | null,
-): boolean {
-  if (!target || !(target instanceof HTMLElement)) return false;
-  return !!target.closest?.(".xterm");
-}
+export * from "./targets";
 
 export type VimListAction =
   | { kind: "next" }

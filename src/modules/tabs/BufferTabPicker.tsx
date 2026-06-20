@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { isEditableTarget } from "@/modules/keyboard/core/vimList";
+import { isEditableTarget } from "@/modules/keyboard/core/targets";
 import { useVimListNavigation } from "@/modules/keyboard/hooks/useVimListNavigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { labelFor } from "./lib/tabLabel";

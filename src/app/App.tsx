@@ -48,6 +48,15 @@ import {
   type ShortcutHandlers,
   type ShortcutId,
 } from "@/modules/shortcuts";
+import { useTerminalPrefix } from "@/modules/keyboard/hooks/useTerminalPrefix";
+import {
+  isEditableTarget,
+  isInExplorer,
+  isInExplorerSearch,
+  isInExplorerSearchResults,
+  isInSourceControl,
+  isTerminalTarget,
+} from "@/modules/keyboard/core/targets";
 import {
   SidebarRail,
   SIDEBAR_MAX_WIDTH,
@@ -634,62 +643,18 @@ export default function App() {
   );
 
   const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
-  const [terminalPrefixActive, setTerminalPrefixActive] = useState(false);
-  const terminalPrefixRef = useRef(false);
   const [bufferPickerOpen, setBufferPickerOpen] = useState(false);
 
-  useEffect(() => {
-    if (!vimNavigationEnabled) return;
-    const onKey = (e: KeyboardEvent) => {
-      const target = (e.target as HTMLElement | null) ?? document.activeElement;
-      const inTerminal = !!(target as HTMLElement | null)?.closest?.(".xterm");
-
-      if (e.ctrlKey && e.code === "Space" && !e.shiftKey && !e.altKey && !e.metaKey) {
-        if (!inTerminal) return;
-        e.preventDefault();
-        e.stopPropagation();
-        terminalPrefixRef.current = true;
-        setTerminalPrefixActive(true);
-        return;
-      }
-
-      if (terminalPrefixRef.current) {
-        terminalPrefixRef.current = false;
-        setTerminalPrefixActive(false);
-        let handled = true;
-        switch (e.key) {
-          case "h": focusDirectionalPaneInTab(activeId, "left"); break;
-          case "l": focusDirectionalPaneInTab(activeId, "right"); break;
-          case "j": focusDirectionalPaneInTab(activeId, "down"); break;
-          case "k": focusDirectionalPaneInTab(activeId, "up"); break;
-          case "e": focusExplorer(); break;
-          case "b": setBufferPickerOpen(true); break;
-          case "s": setSwitcherOpen(true); break;
-          case "g":
-            cycleSidebarView("source-control");
-            requestAnimationFrame(() => {
-              const sc = document.querySelector<HTMLElement>(
-                "[data-source-control]",
-              );
-              sc?.focus();
-            });
-            break;
-          case "t": stepSwitcher(1); break;
-          case "T": stepSwitcher(-1); break;
-          case "q":
-          case "Escape": break;
-          default: handled = false; break;
-        }
-        if (handled) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        return;
-      }
-    };
-    window.addEventListener("keydown", onKey, { capture: true });
-    return () => window.removeEventListener("keydown", onKey, { capture: true });
-  }, [vimNavigationEnabled, activeId, focusDirectionalPaneInTab, focusExplorer, setSwitcherOpen, cycleSidebarView, stepSwitcher]);
+  const { terminalPrefixActive } = useTerminalPrefix({
+    enabled: vimNavigationEnabled,
+    activeTabId: activeId,
+    focusDirectionalPaneInTab,
+    focusExplorer,
+    setBufferPickerOpen,
+    setSwitcherOpen,
+    cycleSidebarView,
+    stepSwitcher,
+  });
 
   const openPreviewTab = useCallback(
     (url: string) => {
@@ -807,10 +772,7 @@ export default function App() {
       if (id === "ai.askSelection") {
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
-          ".xterm",
-        );
-        if (inTerminal) {
+        if (isTerminalTarget(target)) {
           const sel = captureActiveSelection();
           return !sel || !sel.trim();
         }
@@ -825,7 +787,7 @@ export default function App() {
         // fall through (we never preventDefault when disabled).
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        return !(target as HTMLElement | null)?.closest?.(".xterm");
+        return !isTerminalTarget(target);
       }
       if (
         id === "terminal.toggleInput" ||
@@ -835,25 +797,16 @@ export default function App() {
         return !(activeTab?.kind === "terminal" && activeTab.blocks === true);
       }
       if (id === "sidebar.toggle") {
-        // Ctrl+B is also Claude Code's "run in background" key. While a terminal
-        // is focused, let Ctrl+B reach the shell/Claude instead of toggling the
-        // sidebar. Ctrl+Shift+B (second binding) still toggles it from anywhere.
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
-          ".xterm",
-        );
         // Only defer the plain (no-shift) Ctrl/⌘+B binding; the Shift variant
         // is the always-on toggle and is never claimed by the terminal.
-        return inTerminal && !e.shiftKey;
+        return isTerminalTarget(target) && !e.shiftKey;
       }
       if (id === "tab.next") {
         const target =
           (e.target as HTMLElement | null) ?? document.activeElement;
-        const inTerminal = !!(target as HTMLElement | null)?.closest?.(
-          ".xterm",
-        );
-        if (inTerminal) return true;
+        if (isTerminalTarget(target)) return true;
         return false;
       }
       if (
@@ -862,12 +815,9 @@ export default function App() {
       ) {
         if (!vimNavigationEnabled) return true;
         const target = (e.target as HTMLElement | null) ?? document.activeElement;
-        if ((target as HTMLElement | null)?.closest?.(".xterm, [data-terminal]")) return true;
-        if (target instanceof HTMLElement && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) return true;
-        const inExplorerSearchResults = !!(target as HTMLElement | null)?.closest?.(
-          "[data-file-explorer-search-results]",
-        );
-        if (inExplorerSearchResults) {
+        if (isTerminalTarget(target) || (target as HTMLElement | null)?.closest?.("[data-terminal]")) return true;
+        if (isEditableTarget(target)) return true;
+        if (isInExplorerSearchResults(target)) {
           if (id === "workspace.focusEditor" && e.ctrlKey && e.key.toLowerCase() === "l") {
             const searchInput = document.querySelector<HTMLElement>(
               "[data-file-explorer-search]",
@@ -880,21 +830,13 @@ export default function App() {
           }
           return true;
         }
-        const inExplorerSearch = !!(target as HTMLElement | null)?.closest?.(
-          "[data-file-explorer-search]",
-        );
-        if (inExplorerSearch) return true;
-        const inSourceControl = !!(target as HTMLElement | null)?.closest?.(
-          "[data-source-control]",
-        );
+        if (isInExplorerSearch(target)) return true;
         if (id === "workspace.focusExplorer") {
-          const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
-          if (inExplorer || inSourceControl) return true;
+          if (isInExplorer(target) || isInSourceControl(target)) return true;
           return false;
         }
         if (id === "workspace.focusEditor") {
-          const inExplorer = !!(target as HTMLElement | null)?.closest?.("[data-file-explorer]");
-          if (!inExplorer && !inSourceControl) return true;
+          if (!isInExplorer(target) && !isInSourceControl(target)) return true;
           return false;
         }
         return false;

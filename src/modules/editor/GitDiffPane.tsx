@@ -8,11 +8,8 @@ import CodeMirror, { type ReactCodeMirrorRef } from "@uiw/react-codemirror";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
-  GG_TIMEOUT_MS,
-  isCapitalGKey,
-  isPendingGKey,
-  isPlainVimKey,
-} from "@/modules/explorer/lib/vimKeys";
+  interpretVimListKey,
+} from "@/modules/keyboard/core/vimList";
 import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import {
   fetchCommitDiff,
@@ -311,45 +308,34 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
       ) {
         return;
       }
-      if (!isPlainVimKey(e)) return;
 
-      if (pendingGRef.current && e.key === "g") {
-        e.preventDefault();
-        e.stopPropagation();
-        if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
-        pendingGRef.current = null;
-        scrollDiff("top");
-        return;
-      }
-      if (pendingGRef.current) {
-        window.clearTimeout(pendingGRef.current);
-        pendingGRef.current = null;
-      }
-      if (isPendingGKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        pendingGRef.current = window.setTimeout(() => {
-          pendingGRef.current = null;
-        }, GG_TIMEOUT_MS);
-        return;
-      }
-      if (isCapitalGKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        scrollDiff("bottom");
-        return;
-      }
-      if (e.key === "j") {
-        e.preventDefault();
-        e.stopPropagation();
-        scrollDiff("down");
-        return;
-      }
-      if (e.key === "k") {
-        e.preventDefault();
-        e.stopPropagation();
-        scrollDiff("up");
-        return;
+      const action = interpretVimListKey(e.nativeEvent, pendingGRef);
+      switch (action.kind) {
+        case "next":
+          e.preventDefault();
+          e.stopPropagation();
+          scrollDiff("down");
+          return;
+        case "prev":
+          e.preventDefault();
+          e.stopPropagation();
+          scrollDiff("up");
+          return;
+        case "first":
+          e.preventDefault();
+          e.stopPropagation();
+          scrollDiff("top");
+          return;
+        case "last":
+          e.preventDefault();
+          e.stopPropagation();
+          scrollDiff("bottom");
+          return;
+        case "activate":
+        case "escape":
+        case "none":
+        case "armG":
+          return;
       }
     },
     [vimNavigationEnabled, scrollDiff],

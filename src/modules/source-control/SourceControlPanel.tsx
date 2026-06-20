@@ -65,11 +65,9 @@ import {
 } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
-  GG_TIMEOUT_MS,
-  isCapitalGKey,
-  isPendingGKey,
+  interpretVimListKey,
   isPlainVimKey,
-} from "@/modules/explorer/lib/vimKeys";
+} from "@/modules/keyboard/core/vimList";
 import type { SourceControlSummary } from "./useSourceControl";
 import {
   useSourceControlPanel,
@@ -399,13 +397,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     });
   }, []);
 
-  const clearPendingG = useCallback(() => {
-    if (pendingGRef.current) {
-      window.clearTimeout(pendingGRef.current);
-      pendingGRef.current = null;
-    }
-  }, []);
-
   const handlePanelKeyDown = useCallback(
     (event: KeyboardEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement | null;
@@ -425,26 +416,27 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       }
 
       if (vimNavigationEnabled && isPlainVimKey(event)) {
-        if (pendingGRef.current && event.key === "g") {
-          event.preventDefault();
-          clearPendingG();
-          focusFirstChange();
-          return;
-        }
-        if (pendingGRef.current) {
-          clearPendingG();
-        }
-        if (isPendingGKey(event)) {
-          event.preventDefault();
-          pendingGRef.current = window.setTimeout(() => {
-            pendingGRef.current = null;
-          }, GG_TIMEOUT_MS);
-          return;
-        }
-        if (isCapitalGKey(event)) {
-          event.preventDefault();
-          focusLastChange();
-          return;
+        const action = interpretVimListKey(event.nativeEvent, pendingGRef);
+        switch (action.kind) {
+          case "next":
+            event.preventDefault();
+            moveFocus(1);
+            return;
+          case "prev":
+            event.preventDefault();
+            moveFocus(-1);
+            return;
+          case "first":
+            event.preventDefault();
+            focusFirstChange();
+            return;
+          case "last":
+            event.preventDefault();
+            focusLastChange();
+            return;
+          case "none":
+          case "armG":
+            break;
         }
         if (event.key === "r" || event.key === "R") {
           event.preventDefault();
@@ -454,16 +446,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         if (event.key === "c") {
           event.preventDefault();
           focusCommitInput();
-          return;
-        }
-        if (event.key === "j") {
-          event.preventDefault();
-          moveFocus(1);
-          return;
-        }
-        if (event.key === "k") {
-          event.preventDefault();
-          moveFocus(-1);
           return;
         }
         if (event.key === "l") {
@@ -483,10 +465,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           }
           return;
         }
-      }
-
-      if (pendingGRef.current) {
-        clearPendingG();
       }
 
       switch (event.key) {
@@ -540,7 +518,6 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       focusLastChange,
       focusCommitInput,
       focusDiffOrEditor,
-      clearPendingG,
     ],
   );
 

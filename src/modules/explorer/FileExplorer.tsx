@@ -29,13 +29,7 @@ import { cn } from "@/lib/utils";
 import { ExplorerSearch, type ExplorerSearchHandle } from "./ExplorerSearch";
 import { EntryRow, PendingRow, StatusRow, type RowActions } from "./TreeRow";
 import { InlineInput } from "./InlineInput";
-import {
-  GG_TIMEOUT_MS,
-  isCapitalGKey,
-  isPendingGKey,
-  isPlainVimKey,
-  normalizeVimKey,
-} from "./lib/vimKeys";
+import { useVimTreeNavigation } from "@/modules/keyboard/hooks/useVimTreeNavigation";
 import {
   copyToClipboard,
   relativePath,
@@ -219,7 +213,6 @@ export const FileExplorer = memo(
     const containerRef = useRef<HTMLDivElement>(null);
     const scrollRef = useRef<HTMLDivElement>(null);
     const pendingVimCreateRef = useRef(false);
-    const pendingGRef = useRef<number | null>(null);
 
     const { rows, entryIndexByPath } = useMemo(() => {
       if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
@@ -368,13 +361,6 @@ export const FileExplorer = memo(
     );
 
     useEffect(() => {
-      return () => {
-        if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
-      };
-    }, []);
-
-
-    useEffect(() => {
       if (!pendingVimCreateRef.current) return;
       if (tree.pendingCreate !== null) return;
       pendingVimCreateRef.current = false;
@@ -415,155 +401,80 @@ export const FileExplorer = memo(
     const pendingAtRoot =
       tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
 
+    const treeNavigation = useVimTreeNavigation({
+      enabled: vimNavigationEnabled,
+      itemIds: entryPaths,
+      selectedId: selectedPath,
+      setSelectedId: (id) => setSelectedPath(id),
+      isDirectory: (id) => {
+        const idx = entryIndexByPath.get(id);
+        const row = idx !== undefined ? rows[idx] : undefined;
+        return row?.kind === "entry" && row.isDir;
+      },
+      isExpanded: (id) => tree.expanded.has(id),
+      expand: (id) => tree.toggle(id),
+      collapse: (id) => tree.toggle(id),
+      parentOf,
+      rootPath: rootPath ?? "",
+      onActivate: (id) => {
+        const idx = entryIndexByPath.get(id);
+        if (idx === undefined) return;
+        const row = rows[idx];
+        if (row.kind !== "entry") return;
+        if (row.isDir) tree.toggle(row.path);
+        else {
+          onOpenFile(row.path);
+          onFileOpened?.();
+        }
+      },
+      onSearch: () => {
+        setIsSearchOpen(true);
+        searchRef.current?.focus();
+      },
+      onCreateFile: () => {
+        const targetDir = (() => {
+          if (!selectedPath) return rootPath;
+          const idx = entryIndexByPath.get(selectedPath);
+          const row = idx !== undefined ? rows[idx] : undefined;
+          if (row?.kind === "entry" && row.isDir) return row.path;
+          return parentOf(selectedPath, rootPath ?? "");
+        })();
+        pendingVimCreateRef.current = true;
+        tree.beginCreate(targetDir, "file");
+      },
+      onCreateFolder: () => {
+        const targetDir = (() => {
+          if (!selectedPath) return rootPath;
+          const idx = entryIndexByPath.get(selectedPath);
+          const row = idx !== undefined ? rows[idx] : undefined;
+          if (row?.kind === "entry" && row.isDir) return row.path;
+          return parentOf(selectedPath, rootPath ?? "");
+        })();
+        pendingVimCreateRef.current = true;
+        tree.beginCreate(targetDir, "dir");
+      },
+      onRefresh: () => tree.refresh(rootPath ?? ""),
+      isEventTargetIgnored: (target) => {
+        if (!target || !(target instanceof HTMLElement)) return false;
+        return (
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.isContentEditable
+        );
+      },
+      scrollToId: (id) => scrollEntryIntoView(id),
+    });
+
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (tree.renaming || tree.pendingCreate) return;
-      const target = e.target as HTMLElement;
-      if (
-        target.tagName === "INPUT" ||
-        target.tagName === "TEXTAREA" ||
-        target.isContentEditable
-      )
+
+      if (vimNavigationEnabled && e.ctrlKey && e.key === "k") {
+        e.preventDefault();
+        if (isSearchOpen) searchRef.current?.focus();
         return;
-      if (entryPaths.length === 0) return;
-
-      if (vimNavigationEnabled) {
-        if (e.key === "/") {
-          e.preventDefault();
-          setIsSearchOpen(true);
-          searchRef.current?.focus();
-          return;
-        }
-        if (e.ctrlKey && e.key === "k") {
-          e.preventDefault();
-          if (isSearchOpen) searchRef.current?.focus();
-          return;
-        }
-        if (isPlainVimKey(e)) {
-          if (e.key === "a" || e.key === "A") {
-            const targetDir = (() => {
-              if (!selectedPath) return rootPath;
-              const idx = entryIndexByPath.get(selectedPath);
-              const row = idx !== undefined ? rows[idx] : undefined;
-              if (row?.kind === "entry" && row.isDir) return row.path;
-              return parentOf(selectedPath, rootPath);
-            })();
-            pendingVimCreateRef.current = true;
-            tree.beginCreate(targetDir, e.key === "a" ? "file" : "dir");
-            return;
-          }
-          if (e.key === "R") {
-            tree.refresh(rootPath);
-            return;
-          }
-          if (pendingGRef.current && e.key === "g") {
-            e.preventDefault();
-            if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
-            pendingGRef.current = null;
-            if (entryPaths.length > 0) {
-              const first = entryPaths[0];
-              setSelectedPath(first);
-              requestAnimationFrame(() => scrollEntryIntoView(first));
-            }
-            return;
-          }
-          if (isPendingGKey(e)) {
-            e.preventDefault();
-            if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
-            pendingGRef.current = window.setTimeout(() => {
-              pendingGRef.current = null;
-            }, GG_TIMEOUT_MS);
-            return;
-          }
-          if (pendingGRef.current) {
-            window.clearTimeout(pendingGRef.current);
-            pendingGRef.current = null;
-          }
-          if (isCapitalGKey(e)) {
-            e.preventDefault();
-            if (entryPaths.length > 0) {
-              const last = entryPaths[entryPaths.length - 1];
-              setSelectedPath(last);
-              requestAnimationFrame(() => scrollEntryIntoView(last));
-            }
-            return;
-          }
-        }
       }
 
-      if (pendingGRef.current) {
-        window.clearTimeout(pendingGRef.current);
-        pendingGRef.current = null;
-      }
-
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-      const currentIdx = selectedPath ? entryPaths.indexOf(selectedPath) : -1;
-      const move = (next: number) => {
-        const clamped = Math.max(0, Math.min(entryPaths.length - 1, next));
-        const path = entryPaths[clamped];
-        setSelectedPath(path);
-        requestAnimationFrame(() => scrollEntryIntoView(path));
-      };
-
-      const key = vimNavigationEnabled && !e.shiftKey ? normalizeVimKey(e.key) : e.key;
-      switch (key) {
-        case "ArrowDown":
-          e.preventDefault();
-          move(currentIdx < 0 ? 0 : currentIdx + 1);
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          move(currentIdx < 0 ? entryPaths.length - 1 : currentIdx - 1);
-          break;
-        case "ArrowRight": {
-          if (currentIdx < 0) break;
-          const path = entryPaths[currentIdx];
-          const idx = entryIndexByPath.get(path);
-          if (idx === undefined) break;
-          const row = rows[idx];
-          if (row.kind !== "entry") break;
-          e.preventDefault();
-          if (row.isDir) {
-            if (!row.isExpanded) tree.toggle(row.path);
-            else move(currentIdx + 1);
-          }
-          break;
-        }
-        case "ArrowLeft": {
-          if (currentIdx < 0) break;
-          const path = entryPaths[currentIdx];
-          const idx = entryIndexByPath.get(path);
-          if (idx === undefined) break;
-          const row = rows[idx];
-          if (row.kind !== "entry") break;
-          if (row.isDir && row.isExpanded) {
-            e.preventDefault();
-            tree.toggle(row.path);
-          } else {
-            const parent = row.path.slice(0, row.path.lastIndexOf("/"));
-            if (parent && parent !== rootPath) {
-              e.preventDefault();
-              setSelectedPath(parent);
-            }
-          }
-          break;
-        }
-        case "Enter": {
-          if (currentIdx < 0) break;
-          const path = entryPaths[currentIdx];
-          const idx = entryIndexByPath.get(path);
-          if (idx === undefined) break;
-          const row = rows[idx];
-          if (row.kind !== "entry") break;
-          e.preventDefault();
-          if (row.isDir) tree.toggle(row.path);
-          else {
-            onOpenFile(row.path);
-            onFileOpened?.();
-          }
-          break;
-        }
-      }
+      treeNavigation.onKeyDown(e.nativeEvent);
     };
 
     const renderRow = (row: Row) => {

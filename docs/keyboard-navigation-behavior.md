@@ -289,13 +289,13 @@ SourceControlPanel, GitDiffPane) are migrated to the new import paths.
 |---|---|---|
 | BufferTabPicker | `useVimListNavigation` | Hook manages j/k/gg/G/Enter/Escape + editable target guard + pending-g cleanup |
 | SpaceSwitcher | `useVimListNavigation` | Hook + `onUnhandledPlainKey` for h/l expand/collapse. The early modifier guard (`if (e.ctrlKey ...) return`) before `interpretVimListKey` was removed — the function handles modifiers internally. |
+| ExplorerSearch | `useVimListNavigation` | Hook manages results-list Vim navigation (j/k/gg/G/Enter). Input-specific behavior (Escape, Ctrl+j, ArrowDown/ArrowUp wrap) remains local because of different wrap/focus semantics. Ctrl+k/Ctrl+l (focus input) handled before the hook. Global window listener forwards only `g` to the hook (so gg from outside the results list routes to search results, not the tree); other keys call `clearPendingG`. |
+| SourceControlPanel | `interpretVimListKey` (core) | Uses `interpretVimListKey` directly (not the hook) because of non-contiguous focusable indices (banners, headers interleaved with entries) and virtualized scrolling via `@tanstack/react-virtual`. Domain actions (`l`, `c`, `r`/`R`, Space) remain local. ArrowDown/ArrowUp/s/S/d/D handled in non-vim fallback section. |
+| GitDiffPane | `interpretVimListKey` (core) | Scrolls a CodeMirror view (not a list). Uses `interpretVimListKey` directly with `scrollDiff` callbacks for j/k/gg/G. |
 
 ### Not yet migrated
 
 - FileExplorer
-- ExplorerSearch
-- SourceControlPanel
-- GitDiffPane
 - Terminal prefix mode in App.tsx
 - Workspace focus shortcuts (`workspace.focusExplorer`, `workspace.focusEditor`)
 

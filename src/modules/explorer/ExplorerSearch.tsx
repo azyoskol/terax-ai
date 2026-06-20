@@ -17,18 +17,14 @@ import { invoke } from "@tauri-apps/api/core";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useImperativeHandle,
   useRef,
   useState,
 } from "react";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import {
-  GG_TIMEOUT_MS,
-  isCapitalGKey,
-  isPendingGKey,
-  isPlainVimKey,
-} from "./lib/vimKeys";
+import { useVimListNavigation } from "@/modules/keyboard/hooks/useVimListNavigation";
 import { fileIconUrl } from "./lib/iconResolver";
 import { copyToClipboard, revealInFinder } from "./lib/contextActions";
 import { COMPACT_CONTENT, COMPACT_ITEM } from "./lib/menuItemClass";
@@ -92,15 +88,31 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
   const inputRef = useRef<HTMLInputElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const lastKeyboardNavAt = useRef(0);
-  const pendingGRef = useRef<number | null>(null);
+
+  const handleSelect = (hit: SearchHit) => {
+    if (hit.is_dir) {
+      onToggleFolder?.(hit.path);
+    } else {
+      onOpenFile(hit.path);
+      onFileOpened?.();
+    }
+  };
+
+  const { onKeyDown: hookOnKeyDown, clearPendingG } = useVimListNavigation({
+    enabled: true,
+    itemCount: results.length,
+    selectedIndex,
+    setSelectedIndex,
+    onActivate: useCallback(
+      (index: number) => {
+        const hit = results[index];
+        if (hit) handleSelect(hit);
+      },
+      [results, handleSelect],
+    ),
+  });
 
   const active = query.trim().length > 0;
-
-  useEffect(() => {
-    return () => {
-      if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
-    };
-  }, []);
 
   useEffect(() => {
     if (!open || results.length === 0) return;
@@ -121,33 +133,14 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
       )
         return;
       if (e.key === "g") {
-        if (pendingGRef.current) {
-          e.preventDefault();
-          e.stopPropagation();
-          window.clearTimeout(pendingGRef.current);
-          pendingGRef.current = null;
-          setSelectedIndex(0);
-          requestAnimationFrame(() => {
-            const el = scrollRef.current?.querySelector('[data-index="0"]');
-            el?.scrollIntoView({ block: "nearest" });
-          });
-        } else {
-          e.preventDefault();
-          e.stopPropagation();
-          pendingGRef.current = window.setTimeout(() => {
-            pendingGRef.current = null;
-          }, GG_TIMEOUT_MS);
-        }
+        hookOnKeyDown(e);
         return;
       }
-      if (pendingGRef.current) {
-        window.clearTimeout(pendingGRef.current);
-        pendingGRef.current = null;
-      }
+      clearPendingG();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [open, results.length]);
+  }, [open, results.length, hookOnKeyDown, clearPendingG]);
 
   useEffect(() => {
     onActiveChange?.(active);
@@ -233,15 +226,6 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
       el?.scrollIntoView({ block: "nearest" });
     }
   }, [selectedIndex, results, active]);
-
-  const handleSelect = (hit: SearchHit) => {
-    if (hit.is_dir) {
-      onToggleFolder?.(hit.path);
-    } else {
-      onOpenFile(hit.path);
-      onFileOpened?.();
-    }
-  };
 
   return (
     <div className="flex flex-col">
@@ -333,72 +317,8 @@ export const ExplorerSearch = forwardRef<ExplorerSearchHandle, Props>(function E
                 inputRef.current?.focus();
                 return;
               }
-              if (isPlainVimKey(e)) {
-                if (pendingGRef.current && e.key === "g") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  window.clearTimeout(pendingGRef.current);
-                  pendingGRef.current = null;
-                  if (results.length > 0) {
-                    setSelectedIndex(0);
-                    requestAnimationFrame(() => {
-                      const el = scrollRef.current?.querySelector('[data-index="0"]');
-                      el?.scrollIntoView({ block: "nearest" });
-                    });
-                  }
-                  return;
-                }
-                if (isPendingGKey(e)) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (pendingGRef.current) window.clearTimeout(pendingGRef.current);
-                  pendingGRef.current = window.setTimeout(() => {
-                    pendingGRef.current = null;
-                  }, GG_TIMEOUT_MS);
-                  return;
-                }
-                if (pendingGRef.current) {
-                  window.clearTimeout(pendingGRef.current);
-                  pendingGRef.current = null;
-                }
-                if (isCapitalGKey(e)) {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  if (results.length > 0) {
-                    const last = results.length - 1;
-                    setSelectedIndex(last);
-                    requestAnimationFrame(() => {
-                      const el = scrollRef.current?.querySelector(`[data-index="${last}"]`);
-                      el?.scrollIntoView({ block: "nearest" });
-                    });
-                  }
-                  return;
-                }
-                if (e.key === "j") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  lastKeyboardNavAt.current = Date.now();
-                  setSelectedIndex((prev) => Math.min(prev + 1, results.length - 1));
-                  return;
-                }
-                if (e.key === "k") {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  lastKeyboardNavAt.current = Date.now();
-                  setSelectedIndex((prev) => Math.max(prev - 1, 0));
-                  return;
-                }
-              }
-              if (pendingGRef.current) {
-                window.clearTimeout(pendingGRef.current);
-                pendingGRef.current = null;
-              }
-              if (e.key === "Enter") {
-                e.preventDefault();
-                e.stopPropagation();
-                const hit = results[selectedIndex];
-                if (hit) handleSelect(hit);
-              }
+              lastKeyboardNavAt.current = Date.now();
+              hookOnKeyDown(e.nativeEvent);
             }}
           >
             {searching && results.length === 0 ? (
