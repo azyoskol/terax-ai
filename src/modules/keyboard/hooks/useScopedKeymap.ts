@@ -11,6 +11,13 @@ import {
   keyboardSurfaceRegistry,
   type KeyboardScope,
 } from "../core/KeyboardSurfaceRegistry";
+import {
+  matchesKeyBinding as matchesKeyBindingCore,
+  createSequenceState,
+  armSequence as armSequenceCore,
+  resetSequence,
+  type SequenceState,
+} from "./scopedKeymapCore";
 
 export type KeyBinding = {
   /** Current `event.key` value for the first key in the binding. */
@@ -61,128 +68,16 @@ type UseScopedKeymapOptions = {
 };
 
 // ---------------------------------------------------------------------------
-// Pure helpers (exported for testing)
+// Pure helpers — re-exported from core for backward compatibility
 // ---------------------------------------------------------------------------
 
-/**
- * Check if a keyboard event matches a binding's modifiers.
- *
- * Rules:
- * - If `modifiers` is omitted, require no ctrl/meta/alt.
- * - Shift is special: if omitted, do not require exact shift match.
- *   This allows uppercase event.key like "G" to match key "G" without
- *   needing explicit shift.
- * - If a modifier is explicitly set, it must match exactly.
- */
-export function matchesModifiers(
-  event: KeyboardEvent,
-  modifiers?: KeyBinding["modifiers"],
-): boolean {
-  if (!modifiers) {
-    return !event.ctrlKey && !event.altKey && !event.metaKey;
-  }
-  if (modifiers.ctrl !== undefined && !!event.ctrlKey !== modifiers.ctrl)
-    return false;
-  if (modifiers.meta !== undefined && !!event.metaKey !== modifiers.meta)
-    return false;
-  if (modifiers.alt !== undefined && !!event.altKey !== modifiers.alt)
-    return false;
-  // Shift: only enforce if explicitly set
-  if (modifiers.shift !== undefined && !!event.shiftKey !== modifiers.shift)
-    return false;
-  return true;
-}
-
-/**
- * Check if a keyboard event matches a binding.
- * Does not check `when` — caller must check separately.
- */
-export function matchesKeyBinding(
-  event: KeyboardEvent,
-  binding: KeyBinding,
-): boolean {
-  if (binding.key !== event.key) return false;
-  if (!matchesModifiers(event, binding.modifiers)) return false;
-  return true;
-}
-
-/**
- * Format a binding's display key for help overlays.
- */
-function formatBindingKey(binding: KeyBinding): string {
-  if (binding.helpKey) return binding.helpKey;
-  if (binding.sequence) return binding.sequence;
-
-  const parts: string[] = [];
-  if (binding.modifiers?.ctrl) parts.push("Ctrl");
-  if (binding.modifiers?.meta) parts.push("Meta");
-  if (binding.modifiers?.alt) parts.push("Alt");
-  if (binding.modifiers?.shift) parts.push("Shift");
-  parts.push(binding.key);
-  return parts.join("+");
-}
-
-/**
- * Generate help items from binding descriptors.
- * Excludes hidden bindings.
- */
-export function getBindingHelp(
-  bindings: KeyBinding[],
-): { key: string; description: string }[] {
-  return bindings
-    .filter((b) => !b.hidden)
-    .map((b) => ({ key: formatBindingKey(b), description: b.description }));
-}
+export { matchesModifiers, matchesKeyBinding, getBindingHelp } from "./scopedKeymapCore";
 
 // ---------------------------------------------------------------------------
-// Sequence state machine (pure, testable)
+// Sequence state machine (for cleanup on unmount)
 // ---------------------------------------------------------------------------
 
 const DEFAULT_SEQUENCE_TIMEOUT_MS = 700;
-
-type SequenceState = {
-  pendingSequence: string | null;
-  pendingTimeout: ReturnType<typeof setTimeout> | null;
-  pendingBindings: KeyBinding[];
-};
-
-function createSequenceState(): SequenceState {
-  return {
-    pendingSequence: null,
-    pendingTimeout: null,
-    pendingBindings: [],
-  };
-}
-
-function clearSequenceTimeout(state: SequenceState): void {
-  if (state.pendingTimeout !== null) {
-    clearTimeout(state.pendingTimeout);
-    state.pendingTimeout = null;
-  }
-  state.pendingSequence = null;
-  state.pendingBindings = [];
-}
-
-function armSequence(
-  state: SequenceState,
-  firstKey: string,
-  bindings: KeyBinding[],
-  timeoutMs: number,
-): boolean {
-  // Find bindings whose sequence starts with this key
-  const candidates = bindings.filter(
-    (b) => b.sequence && b.sequence[0] === firstKey,
-  );
-  if (candidates.length === 0) return false;
-
-  state.pendingSequence = firstKey;
-  state.pendingBindings = candidates;
-  clearSequenceTimeout(state);
-  state.pendingTimeout = setTimeout(() => {
-    clearSequenceTimeout(state);
-  }, timeoutMs);
-  return true;
-}
 
 // ---------------------------------------------------------------------------
 // Hook
@@ -221,7 +116,7 @@ export function useScopedKeymap({
   // Cleanup sequence timeout on unmount
   useEffect(() => {
     return () => {
-      clearSequenceTimeout(seqRef.current);
+      resetSequence(seqRef.current);
     };
   }, []);
 
@@ -236,47 +131,54 @@ export function useScopedKeymap({
       if (!focused) {
         if (!activeWhenNoSurfaceRef.current) return;
       } else if (focused.scope !== scopeRef.current) {
-        // Clear any pending sequence when scope changes
-        clearSequenceTimeout(seqRef.current);
+        resetSequence(seqRef.current);
         return;
       }
 
       const seq = seqRef.current;
 
-      // Modified keys clear pending sequence
-      if (e.ctrlKey || e.altKey || e.metaKey) {
-        if (seq.pendingSequence) clearSequenceTimeout(seq);
-      }
+      // Pre-read pending sequence before processing
+      const pendingFirstKey = seq.pendingSequence;
+      const pendingBindings = seq.pendingBindings;
 
-      // Check for sequence completion
-      if (seq.pendingSequence) {
-        const fullSequence = seq.pendingSequence + e.key;
-        const matchingSequence = bindingsRef.current.find(
+      // Modified keys clear pending sequence, then allow single-key matching
+      if (e.ctrlKey || e.altKey || e.metaKey) {
+        if (pendingFirstKey) {
+          resetSequence(seq);
+          // Fall through to single-key matching for modified keys
+        }
+      } else if (pendingFirstKey) {
+        // Sequence in progress — check for completion
+        const fullSequence = pendingFirstKey + e.key;
+        const matchingBinding = pendingBindings.find(
           (b) => b.sequence === fullSequence,
         );
 
-        if (matchingSequence) {
-          // Sequence completed
-          clearSequenceTimeout(seq);
-          if (matchingSequence.when && !matchingSequence.when()) return;
-          if (matchingSequence.preventDefault) e.preventDefault();
-          if (matchingSequence.stopPropagation) e.stopPropagation();
-          matchingSequence.action(e);
+        if (matchingBinding) {
+          resetSequence(seq);
+          if (matchingBinding.when && !matchingBinding.when()) return;
+          if (matchingBinding.preventDefault) e.preventDefault();
+          if (matchingBinding.stopPropagation) e.stopPropagation();
+          matchingBinding.action(e);
           return;
         }
 
         // Sequence broken — clear and fall through to single-key matching
-        clearSequenceTimeout(seq);
+        resetSequence(seq);
       }
 
       // Single-key matching
       for (const binding of bindingsRef.current) {
-        if (!matchesKeyBinding(e, binding)) continue;
+        if (!matchesKeyBindingCore(e, binding)) continue;
         if (binding.when && !binding.when()) continue;
 
-        // Check if this key starts a sequence
+        // Sequence binding: arm the sequence, do not fire action on first key
         if (binding.sequence && binding.sequence.length > 1) {
-          if (armSequence(seq, e.key, bindingsRef.current, sequenceTimeoutMs)) {
+          if (
+            armSequenceCore(seq, e.key, bindingsRef.current, sequenceTimeoutMs)
+          ) {
+            if (binding.preventDefault) e.preventDefault();
+            if (binding.stopPropagation) e.stopPropagation();
             return; // Armed, wait for next key
           }
         }

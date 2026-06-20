@@ -7,7 +7,7 @@
 | Shared focus helpers | **Adopted in App + targets** | `focusWithRetry`, `focusEditorWithRetry`, `focusElementBySelectorWithRetry` replace inline retry loops. More call sites can migrate later. |
 | Surface registry | **Foundation only** | `KeyboardSurfaceRegistry` exists. App registers editor + explorer, but registration is stale (refs may not exist when the `[]` effect runs). No other surface registers. |
 | Surface context / `useRegisterSurface` | **Foundation only** | Hook exists but is not used by any surface component. |
-| Scoped keymap | **Foundation improved, not adopted** | `useScopedKeymap` now supports modifiers, `gg` sequences, strict scope behavior, and help generation from binding descriptors. Not yet used by any panel. |
+| Scoped keymap | **Foundation improved, not adopted** | `useScopedKeymap` supports modifiers, strict scope, simple `gg` sequences, and help generation from binding descriptors. Sequence behavior is covered by tests. Pure helpers extracted to `scopedKeymapCore.ts`. Not yet used by panels. |
 | Help overlay | **UI component only** | `KeyboardHelpOverlay` renders a list of `{key, description}`. Help is still passed manually as a static array; not generated from binding definitions. |
 | GitHistory | **Partial** | Uses shared `KeyboardHelpOverlay` and shared `isEditableTarget`. Key handling is still entirely local (`handleKeyDown` with `interpretVimListKey`). |
 | SourceControl | **Local handler** | Uses shared `isEditableTarget` guard. All key handling remains local. |
@@ -199,7 +199,7 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### Scoped keymaps
 
-**Current:** `useScopedKeymap` supports modifiers, `gg` sequences, strict scope behavior (`activeWhenNoSurface: false` by default), and help generation from binding descriptors. Not used by any panel yet.
+**Current:** `useScopedKeymap` supports modifiers, `gg` sequences, strict scope behavior (`activeWhenNoSurface: false` by default), and help generation from binding descriptors. Pure helpers are in `scopedKeymapCore.ts`. Sequence bug fixed (previously `armSequence` cleared state immediately). Not used by any panel yet.
 
 **Target:** Panels use scoped keymaps for their key handling.
 
@@ -239,13 +239,13 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### Tests
 
-**Current:** Basic tests for `focusHelpers` and `KeyboardSurfaceRegistry`.
+**Current:** Tests for `focusHelpers`, `KeyboardSurfaceRegistry`, `scopedKeymapCore` (sequence state machine, modifier matching, help generation, key binding matching). 596 tests total.
 
-**Target:** Focus lifecycle tests, scoped keymap tests, registry integration tests.
+**Target:** Focus lifecycle tests, scoped keymap hook-level tests, registry integration tests.
 
-**Gap:** Tests are minimal (export checks, basic registry ops).
+**Gap:** Hook-level tests for `useScopedKeymap` require DOM environment (jsdom) which is not available. Pure function tests cover all critical logic: sequence arming, sequence completion, sequence timeout, modified key reset, modifier matching, scope filtering.
 
-**Next step:** Add more tests in a dedicated testing phase.
+**Next step:** Add jsdom for hook-level integration tests, or accept pure function coverage as sufficient.
 
 ---
 
@@ -260,6 +260,7 @@ No formal scope registry. Detection is ad-hoc via:
 5. Does not replace `interpretVimListKey` yet — panels still use their own vim handling
 6. Sequence support is simple (same-scope `gg` style) — no arbitrary trie for complex multi-key combos
 7. Attaches to `window` via `addEventListener` — no component-level scoping
+8. Hook-level tests require DOM environment (not available in current test setup)
 
 ### `KeyboardSurfaceRegistry` limitations
 
@@ -358,10 +359,14 @@ type KeyBinding = {
 - `activeWhenNoSurface` — default `false`, strict scope behavior
 - `sequenceTimeoutMs` — default `700ms`
 
-**Pure helpers exported:**
+**Pure helpers exported (from `scopedKeymapCore.ts`, re-exported by `useScopedKeymap.ts`):**
 - `matchesKeyBinding(event, binding)` — check if event matches binding
 - `matchesModifiers(event, modifiers)` — check modifier match
 - `getBindingHelp(bindings)` — generate help items from descriptors
+- `armSequence(state, key, bindings, timeout)` — arm a pending sequence
+- `resetSequence(state)` — clear pending sequence state
+- `processSequenceKey(state, event)` — process a key in sequence context
+- `createSequenceState()` — create empty sequence state
 
 ### 7.4 Shared Keymap Help
 
@@ -649,6 +654,7 @@ function focusEditorWithRetry(editorHandle: { focus: () => void } | null): void;
 | `src/modules/keyboard/hooks/useVimScrollNavigation.ts` | Vim scroll navigation |
 | `src/modules/keyboard/hooks/useTerminalPrefix.ts` | Terminal Ctrl+Space prefix |
 | `src/modules/keyboard/hooks/useScopedKeymap.ts` | Scoped keymap primitive |
+| `src/modules/keyboard/hooks/scopedKeymapCore.ts` | Pure helpers for scoped keymap (sequence state, modifier matching, help) |
 | `src/modules/keyboard/components/KeyboardHelpOverlay.tsx` | Shared help overlay |
 
 ### Shortcut Files
