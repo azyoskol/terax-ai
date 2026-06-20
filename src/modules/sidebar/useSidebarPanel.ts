@@ -266,6 +266,13 @@ export function useSidebarPanel(
       diffView.focus();
       return;
     }
+    const markdownPreview = workspace?.querySelector<HTMLElement>(
+      "[data-markdown-preview]",
+    );
+    if (markdownPreview) {
+      markdownPreview.focus();
+      return;
+    }
     const cmEditor = workspace?.querySelector<HTMLElement>(".cm-editor");
     if (cmEditor) {
       cmEditor.focus();

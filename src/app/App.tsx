@@ -51,7 +51,6 @@ import {
 import { useTerminalPrefix } from "@/modules/keyboard/hooks/useTerminalPrefix";
 import {
   focusSourceControlPanel,
-  isEditableTarget,
   isInExplorer,
   isInExplorerSearch,
   isInExplorerSearchResults,
@@ -862,7 +861,6 @@ export default function App() {
         if (!vimNavigationEnabled) return true;
         const target = (e.target as HTMLElement | null) ?? document.activeElement;
         if (isTerminalTarget(target) || (target as HTMLElement | null)?.closest?.("[data-terminal]")) return true;
-        if (isEditableTarget(target)) return true;
         if (isInExplorerSearchResults(target)) {
           if (id === "workspace.focusEditor" && e.ctrlKey && e.key.toLowerCase() === "l") {
             const searchInput = document.querySelector<HTMLElement>(
