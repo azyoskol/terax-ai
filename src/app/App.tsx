@@ -737,6 +737,15 @@ export default function App() {
       "view.zoomOut": zoomOut,
       "view.zoomReset": zoomReset,
       "view.zenMode": () => setZenMode((v) => !v),
+      "markdown.toggleMode": () => {
+        const active = tabsRef.current.find((t) => t.id === activeId);
+        if (!active) return;
+        if (active.kind === "markdown") {
+          setMarkdownView(active.id, "raw");
+        } else if (active.kind === "editor" && isMarkdownPath(active.path)) {
+          setMarkdownView(active.id, "rendered");
+        }
+      },
       "editor.undo": () => editorRefs.current.get(activeId)?.undo(),
       "editor.redo": () => editorRefs.current.get(activeId)?.redo(),
     }),
@@ -844,6 +853,13 @@ export default function App() {
           return false;
         }
         return false;
+      }
+      if (id === "markdown.toggleMode") {
+        const active = activeTab;
+        if (!active) return true;
+        if (active.kind === "markdown") return false;
+        if (active.kind === "editor" && isMarkdownPath(active.path)) return false;
+        return true;
       }
       return false;
     },
@@ -1117,6 +1133,7 @@ export default function App() {
             openSpacesOverview: () => setSwitcherOpen(true),
             newSpace: () => void handleNewSpace(),
             switchSpace: (id) => useSpaces.getState().setActive(id),
+            setMarkdownView,
           })
         : [],
     [

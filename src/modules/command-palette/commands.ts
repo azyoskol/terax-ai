@@ -1,5 +1,7 @@
+import { isMarkdownPath } from "@/lib/utils";
 import type { SearchTarget } from "@/modules/header";
 import { MAX_PANES_PER_TAB, type Tab } from "@/modules/tabs";
+import type { ShortcutId } from "@/modules/shortcuts";
 import { leafIds } from "@/modules/terminal";
 import {
   Cancel01Icon,
@@ -60,6 +62,7 @@ export type CommandPaletteActionContext = {
   openSpacesOverview: () => void;
   newSpace: () => void;
   switchSpace: (id: string) => void;
+  setMarkdownView?: (id: number, mode: "rendered" | "raw") => void;
 };
 
 const noop = () => {};
@@ -81,6 +84,13 @@ export function createCommandItems(
       : undefined;
   const closeDisabled =
     onlyOneTab && activePaneCount < 2 ? "Last tab" : undefined;
+  const activeMarkdownTab =
+    activeTab &&
+    (activeTab.kind === "markdown" ||
+      (activeTab.kind === "editor" && isMarkdownPath(activeTab.path)));
+  const isMarkdownRendered = activeTab?.kind === "markdown";
+  const isMarkdownRaw =
+    activeTab?.kind === "editor" && isMarkdownPath(activeTab.path);
 
   return [
     {
@@ -291,5 +301,40 @@ export function createCommandItems(
       shortcutId: "ai.askSelection",
       run: ctx.askAiSelection,
     },
+    ...(activeMarkdownTab
+      ? [
+          {
+            id: "markdown.preview",
+            title: "Markdown: Switch to preview",
+            group: "View" as const,
+            keywords: ["markdown", "preview", "rendered", "view"],
+            icon: FileSearchIcon,
+            disabledReason: isMarkdownRendered ? "Already in preview mode" : undefined,
+            run: () => ctx.setMarkdownView?.(activeTab.id, "rendered"),
+          },
+          {
+            id: "markdown.edit",
+            title: "Markdown: Switch to edit",
+            group: "View" as const,
+            keywords: ["markdown", "edit", "raw", "source", "code"],
+            icon: FileEditIcon,
+            disabledReason: isMarkdownRaw ? "Already in edit mode" : undefined,
+            run: () => ctx.setMarkdownView?.(activeTab.id, "raw"),
+          },
+          {
+            id: "markdown.toggleMode",
+            title: "Markdown: Toggle preview/edit",
+            group: "View" as const,
+            keywords: ["markdown", "toggle", "preview", "edit", "switch"],
+            icon: FileEditIcon,
+            shortcutId: "markdown.toggleMode" as ShortcutId,
+            run: () =>
+              ctx.setMarkdownView?.(
+                activeTab.id,
+                isMarkdownRendered ? "raw" : "rendered",
+              ),
+          },
+        ]
+      : []),
   ];
 }

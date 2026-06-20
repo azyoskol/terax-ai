@@ -415,11 +415,8 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         return;
       }
 
-      if (vimNavigationEnabled) {
+      if (vimNavigationEnabled && isPlainVimKey(event)) {
         const action = interpretVimListKey(event.nativeEvent, pendingGRef);
-        if (!isPlainVimKey(event)) {
-          return;
-        }
         switch (action.kind) {
           case "next":
             event.preventDefault();
@@ -708,7 +705,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                       e.preventDefault();
                       e.stopPropagation();
                       containerRef.current?.focus();
-                      return;
+
                     }
                     handleCommitShortcut(e);
                   }}

@@ -46,7 +46,8 @@ export type ShortcutId =
   | "editor.undo"
   | "editor.redo"
   | "workspace.focusExplorer"
-  | "workspace.focusEditor";
+  | "workspace.focusEditor"
+  | "markdown.toggleMode";
 
 export type ShortcutGroup =
   | "General"
@@ -354,6 +355,12 @@ export const SHORTCUTS: Shortcut[] = [
     label: "Focus editor (Vim)",
     group: "View",
     defaultBindings: [{ ctrl: true, key: "l" }],
+  },
+  {
+    id: "markdown.toggleMode",
+    label: "Markdown: Toggle preview/edit",
+    group: "View",
+    defaultBindings: [{ ctrl: true, shift: true, key: "v" }],
   },
 ];
 

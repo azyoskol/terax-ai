@@ -268,8 +268,10 @@ src/modules/keyboard/
     listNavigation.test.ts
   hooks/
     useVimListNavigation.ts     — hook wrapping interpretVimListKey
-                                  with state management
+                                   with state management
     useVimListNavigation.test.ts
+    useVimScrollNavigation.ts   — hook for j/k/gg/G scroll container nav
+    useVimScrollNavigation.test.ts
 ```
 
 ### Compatibility re-export
@@ -300,3 +302,59 @@ SourceControlPanel, GitDiffPane) are migrated to the new import paths.
 - Workspace focus shortcuts (`workspace.focusExplorer`, `workspace.focusEditor`)
 
 These still import from the compatibility re-export at `@/modules/explorer/lib/vimKeys`.
+
+---
+
+## 10. Markdown files
+
+### Preview / rendered mode
+
+When a `.md` file is opened, it renders in preview mode. The preview container is
+focusable and responds to Vim navigation keys:
+
+| Key | Behavior |
+|---|---|
+| `j` | Scroll down (60px step) |
+| `k` | Scroll up (60px step) |
+| `g` (once) | Arms pending-g (800ms timeout). On second `g`: scroll to top |
+| `G` | Scroll to bottom |
+| `e` | Switch to raw/edit mode and focus the CodeMirror editor |
+| `i` | Switch to raw/edit mode and focus the CodeMirror editor |
+| `Enter` | Switch to raw/edit mode and focus the CodeMirror editor |
+
+These keys are not handled when focus is inside an input, textarea, or
+contentEditable element.
+
+### Raw / edit mode
+
+When a markdown tab is in raw/edit mode, it is rendered as an `EditorTab` with
+CodeMirror. Keyboard handling is owned by CodeMirror/editor Vim mode:
+
+- `j` / `k` are line-motion keys (CodeMirror native or Vim mode)
+- `gg` / `G` jump to first/last line
+- `Escape` is not intercepted by the application — it stays inside the editor's
+  Vim mode
+- Switching to preview mode is done through:
+  - `Ctrl+Shift+V` keyboard shortcut
+  - "Markdown: Toggle preview/edit" command palette action
+  - "Markdown: Switch to preview / edit" command palette actions
+  - Toolbar "Rendered" / "Raw" pill buttons
+
+### Commands
+
+| Command | Shortcut | Description |
+|---|---|---|
+| `markdown.toggleMode` | `Ctrl+Shift+V` | Toggle between rendered preview and raw editor |
+| `markdown.preview` | — | Switch current markdown tab to rendered preview |
+| `markdown.edit` | — | Switch current markdown tab to raw editor |
+
+### Technical notes
+
+- The `useVimScrollNavigation` hook provides `j`/`k`/`gg`/`G` scrolling in the
+  rendered preview container, using `interpretVimListKey` for key interpretation
+  and `isEditableTarget` for target filtering.
+- Mode-switching keys (`e`/`i`/`Enter`) are handled in `MarkdownPreviewPane`
+  after the scroll hook processes the event, ensuring no conflict between
+  scroll and switch actions.
+- The toggle shortcut only fires when the active tab is a markdown file
+  (either `kind: "markdown"` or `kind: "editor"` with a `.md` path).
