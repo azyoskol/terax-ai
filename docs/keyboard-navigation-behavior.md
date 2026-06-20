@@ -250,6 +250,8 @@ inside the commit textarea itself).
 - On first open, the pane auto-focuses via IntersectionObserver.
 - When re-activating an existing tab, the pane refocuses automatically.
 - Pressing `g` in Source Control opens or focuses the Commit Graph.
+- Closing details (Esc, click outside, or Radix auto-close) restores focus
+  to the pane root.
 
 ### Vim navigation (when pane is focused)
 
@@ -259,8 +261,9 @@ inside the commit textarea itself).
 | `k` / `ArrowUp` | Select previous commit |
 | `gg` | Select first commit |
 | `G` | Select last commit |
-| `Enter` / `Space` | Open/toggle commit details popover |
-| `Escape` | Close details if open; otherwise blur the pane |
+| `Enter` | Open details for selected commit; if details open, close them; if no commit selected, select first and open details |
+| `Space` | Toggle details for selected commit; if no commit selected, select first and open details |
+| `Escape` | Close details if open (restores focus to pane); if details closed, do nothing |
 | `r` | Refresh commit history |
 | `?` | Toggle keyboard help overlay |
 | `o` | Open commit on remote web (if remote URL exists) |

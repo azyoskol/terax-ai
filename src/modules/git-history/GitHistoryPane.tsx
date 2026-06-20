@@ -526,6 +526,11 @@ export function GitHistoryPane({
     }
   }, [selectedIndex, virtualizer]);
 
+  const closePopover = useCallback(() => {
+    setOpenAnchor(null);
+    requestAnimationFrame(() => containerRef.current?.focus());
+  }, []);
+
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       const target = e.target as HTMLElement | null;
@@ -541,6 +546,20 @@ export function GitHistoryPane({
       }
 
       const action = interpretVimListKey(e, pendingGRef);
+
+      if (e.key === " " && isPlainVimKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (openAnchor) {
+          closePopover();
+        } else if (selectedSha) {
+          openCommitDetails(selectedSha);
+        } else if (filtered.length > 0) {
+          setSelectedSha(filtered[0].sha);
+          openCommitDetails(filtered[0].sha);
+        }
+        return;
+      }
 
       if (e.key === "r" && isPlainVimKey(e)) {
         e.preventDefault();
@@ -630,16 +649,21 @@ export function GitHistoryPane({
         case "activate": {
           e.preventDefault();
           e.stopPropagation();
-          if (selectedSha) openCommitDetails(selectedSha);
+          if (openAnchor) {
+            closePopover();
+          } else if (selectedSha) {
+            openCommitDetails(selectedSha);
+          } else if (filtered.length > 0) {
+            setSelectedSha(filtered[0].sha);
+            openCommitDetails(filtered[0].sha);
+          }
           return;
         }
         case "escape": {
           e.preventDefault();
           e.stopPropagation();
           if (openAnchor) {
-            setOpenAnchor(null);
-          } else {
-            containerRef.current?.blur();
+            closePopover();
           }
           return;
         }
@@ -655,6 +679,7 @@ export function GitHistoryPane({
       filtered,
       openAnchor,
       openCommitDetails,
+      closePopover,
       remoteWeb,
       copyToClipboard,
     ],
@@ -663,7 +688,7 @@ export function GitHistoryPane({
   const handleRowClick = useCallback(
     (sha: string, event: React.MouseEvent<HTMLElement>) => {
       if (openAnchor?.sha === sha) {
-        setOpenAnchor(null);
+        closePopover();
         return;
       }
       // Anchor at the cursor so the popover opens where the user clicked,
@@ -681,10 +706,8 @@ export function GitHistoryPane({
       });
       void fetchFiles(sha);
     },
-    [fetchFiles, openAnchor?.sha],
+    [fetchFiles, openAnchor?.sha, closePopover],
   );
-
-  const closePopover = useCallback(() => setOpenAnchor(null), []);
 
   const openFilesEntry = useMemo(() => {
     if (!openAnchor) return null;
@@ -862,6 +885,14 @@ export function GitHistoryPane({
             collisionPadding={16}
             avoidCollisions
             onOpenAutoFocus={(e) => e.preventDefault()}
+            onCloseAutoFocus={(e) => {
+              e.preventDefault();
+              requestAnimationFrame(() => containerRef.current?.focus());
+            }}
+            onEscapeKeyDown={(e) => {
+              e.preventDefault();
+              closePopover();
+            }}
             className="flex w-[420px] max-w-[calc(100vw-2rem)] flex-col gap-0 overflow-hidden rounded-xl p-0 shadow-xl"
           >
             {openAnchor
