@@ -1,5 +1,15 @@
 import { Kbd } from "@/components/ui/kbd";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
@@ -44,6 +54,7 @@ type Props = {
     edge: "top" | "bottom",
   ) => void;
   onReorderSpaces: (orderedIds: string[]) => void;
+  activeTabId: number | null;
 };
 
 type Edge = "top" | "bottom";
@@ -87,6 +98,7 @@ export function SpaceSwitcher({
   onMoveTabToSpace,
   onReorderTab,
   onReorderSpaces,
+  activeTabId,
 }: Props) {
   const spaces = useSpaces((s) => s.spaces);
   const activeId = useSpaces((s) => s.activeId);
@@ -94,6 +106,8 @@ export function SpaceSwitcher({
   const rename = useSpaces((s) => s.rename);
   const shortcut = useShortcutLabel("space.overview");
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<Set<string>>(() =>
     activeId ? new Set([activeId]) : new Set(),
   );
@@ -188,6 +202,38 @@ export function SpaceSwitcher({
         }
         return false;
       }
+      if (e.key === "a" || e.key === "n") {
+        onNewSpace();
+        return true;
+      }
+      if (e.key === "r") {
+        const item = items[selectedIndex];
+        if (item?.kind === "space") {
+          setEditingId(item.spaceId);
+          return true;
+        }
+        return false;
+      }
+      if (e.key === "d" || e.key === "x") {
+        const item = items[selectedIndex];
+        if (item?.kind === "space" && spaces.length > 1) {
+          setDeleteConfirmId(item.spaceId);
+          return true;
+        }
+        return false;
+      }
+      if (e.key === "m") {
+        const item = items[selectedIndex];
+        if (item?.kind === "space" && activeTabId !== null) {
+          onMoveTabToSpace(activeTabId, item.spaceId);
+          return true;
+        }
+        return false;
+      }
+      if (e.key === "?") {
+        setShowHelp((v) => !v);
+        return true;
+      }
       return false;
     },
   });
@@ -202,7 +248,10 @@ export function SpaceSwitcher({
   }, [open, items.length, onKeyDown, clearPendingG]);
 
   useEffect(() => {
-    if (open) setVimNavIndex(0);
+    if (open) {
+      setVimNavIndex(0);
+      setShowHelp(false);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -315,6 +364,7 @@ export function SpaceSwitcher({
   if (!current) return null;
 
   return (
+    <>
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>
         <button
@@ -333,12 +383,23 @@ export function SpaceSwitcher({
           />
         </button>
       </PopoverTrigger>
-      <PopoverContent data-spaces-menu="" align="start" sideOffset={6} className="w-[20rem] p-1.5">
+      <PopoverContent data-spaces-menu="" data-space-switcher="" align="start" sideOffset={6} className="w-[20rem] p-1.5">
         <div className="flex items-center justify-between px-1.5 pb-1.5 pt-0.5">
           <span className="text-xs font-semibold text-foreground">Spaces</span>
-          {shortcut && (
-            <Kbd className="h-5 bg-muted/70 text-[10px]">{shortcut}</Kbd>
-          )}
+          <div className="flex items-center gap-1.5">
+            {shortcut && (
+              <Kbd className="h-5 bg-muted/70 text-[10px]">{shortcut}</Kbd>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowHelp((v) => !v)}
+              aria-label="Toggle keyboard help"
+              title="Toggle keyboard help"
+              className="flex size-5 items-center justify-center rounded text-muted-foreground/60 hover:bg-accent hover:text-foreground transition-colors text-[11px] font-semibold"
+            >
+              ?
+            </button>
+          </div>
         </div>
         <div ref={listRef} data-spaces-list tabIndex={-1} className="-mx-0.5 max-h-[60vh] overflow-y-auto px-0.5 outline-none">
           {spaces.map((sp) => {
@@ -393,14 +454,44 @@ export function SpaceSwitcher({
             );
           })}
         </div>
+        {showHelp && (
+          <div
+            data-space-switcher-help
+            className="mx-0.5 mb-1 mt-0.5 rounded-md border border-border/60 bg-muted/30 px-2.5 py-2 text-[10.5px]"
+          >
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+              {([
+                ["j / k", "navigate"],
+                ["Enter / l", "open"],
+                ["h", "collapse"],
+                ["a / n", "new space"],
+                ["r", "rename"],
+                ["m", "move tab here"],
+                ["d / x", "delete"],
+                ["Esc", "close"],
+              ] as [string, string][]).map(([key, label]) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <Kbd className="h-4 bg-muted/60 text-[9px] px-1 font-mono shrink-0">{key}</Kbd>
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="mt-1.5 border-t border-border/60 pt-1.5">
           <button
             type="button"
             onClick={onNewSpace}
+            data-space-switcher-new-space
             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
           >
             <HugeiconsIcon icon={PlusSignIcon} size={14} strokeWidth={1.75} />
             <span className="flex-1">New space</span>
+            <span className="flex items-center gap-0.5 tabular-nums">
+              <Kbd className="h-4 bg-muted/70 text-[9px] px-1">a</Kbd>
+              <span className="text-[10px] text-muted-foreground/50">/</span>
+              <Kbd className="h-4 bg-muted/70 text-[9px] px-1">n</Kbd>
+            </span>
           </button>
         </div>
       </PopoverContent>
@@ -423,6 +514,38 @@ export function SpaceSwitcher({
           document.body,
         )}
     </Popover>
+
+    <AlertDialog
+      open={deleteConfirmId !== null}
+      onOpenChange={(o) => { if (!o) setDeleteConfirmId(null); }}
+    >
+      <AlertDialogContent data-space-switcher-delete-dialog>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete space?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {(() => {
+              const sp = spaces.find((s) => s.id === deleteConfirmId);
+              const tabCount = sp ? (tabsBySpace.get(sp.id)?.length ?? 0) : 0;
+              return tabCount > 0
+                ? `Delete "${sp?.name ?? ""}" and its ${tabCount} ${tabCount === 1 ? "tab" : "tabs"}? This cannot be undone.`
+                : `Delete "${sp?.name ?? ""}"? This cannot be undone.`;
+            })()}
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel onClick={() => setDeleteConfirmId(null)}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={() => {
+              if (deleteConfirmId) onDeleteSpace(deleteConfirmId);
+              setDeleteConfirmId(null);
+            }}
+          >
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  </>
   );
 }
 

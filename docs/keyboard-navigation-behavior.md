@@ -102,30 +102,47 @@ Implementation details:
 
 | Key | Behavior |
 |---|---|
-| `h` | If current entry is an expanded dir, collapse it; else move to parent |
 | `j` | Move selection down |
 | `k` | Move selection up |
-| `l` | If current entry is a collapsed dir, expand it; else move to first child |
-| `g` (once) | Arms pending-g (800ms timeout). On second `g`: jump to first entry |
-| `G` | Jump to last entry |
-| `Enter` | If dir: toggle expand/collapse. If file: open |
+| `gg` | Jump to first visible item |
+| `G` | Jump to last visible item |
+| `h` | Collapse selected dir; move to parent when already collapsed |
+| `l` | Expand selected dir; move to first child when already expanded |
+| `Enter` | Open selected file; toggle dir expand/collapse |
+| `o` | Same as Enter (open / activate) |
 | `/` | Open search widget |
-| `Ctrl+k` | Focus search input (if search is open) |
-| `a` | Create file in current directory |
-| `A` | Create directory in current directory |
+| `Ctrl+k` | Focus search input when search is open |
+| `a` | Create file in current/selected directory |
+| `A` | Create directory in current/selected directory |
 | `R` | Refresh explorer tree |
+| `r` | Rename selected file/folder (inline) |
+| `d` | Delete selected file/folder (opens confirmation dialog) |
+| `x` | Delete selected file/folder (opens confirmation dialog) |
+| `y` | Copy absolute path to clipboard |
+| `Y` | Copy relative path to clipboard (from workspace root) |
+| `O` | Reveal selected item in OS file manager |
+| `?` | Toggle keyboard help overlay |
+
+### Delete confirmation behavior
+
+`d` and `x` never delete immediately. They open an `AlertDialog`:
+- Title: "Delete file?" or "Delete folder?"
+- Body shows the item name; folder deletion mentions recursive removal.
+- Cancel dismisses without any change.
+- Confirm calls `fs_delete` and clears the selection if it pointed to the deleted path.
+- If deletion fails, selection stays on the failed item.
 
 ### Non-vim navigation (always active)
 
 Arrow keys (`ArrowDown`, `ArrowUp`, `ArrowRight`, `ArrowLeft`) and `Enter` work
-identically to their vim counterparts. When `vimNavigationEnabled` is on, `j`/`k`/`h`/`l`
-are normalized to Arrow keys via `normalizeVimKey`.
+identically to their vim counterparts.
 
 ### Skipped conditions
 Navigation is skipped when:
 - A rename or pending create is in progress
+- A delete confirmation dialog is open
 - The event target is an input, textarea, or contentEditable element
-- The file list is empty
+- The file list is empty (search/create/refresh still work)
 
 ---
 
@@ -164,54 +181,99 @@ is held, the listener bails out.
 
 ## 6. SourceControlPanel
 
+### Vim navigation (when `vimNavigationEnabled` is true)
+
 | Key | Behavior |
 |---|---|
-| `j` | Move focus to next change (clamped) |
-| `k` | Move focus to previous change (clamped) |
-| `g` (once) | Arms pending-g (800ms timeout). On second `g`: jump to first change |
-| `G` | Jump to last change |
-| `l` | Open diff for focused entry |
+| `j` | Move focus to next changed file (clamped) |
+| `k` | Move focus to previous changed file (clamped) |
+| `gg` | Jump to first changed file |
+| `G` | Jump to last changed file |
+| `l` / `Enter` | Open diff for focused entry and move focus to diff view |
 | `Space` | Stage / unstage focused entry |
 | `c` | Focus commit message input |
 | `r` / `R` | Refresh source control status |
-| `Enter` | Select file and open diff / focus editor |
-| `s` / `S` | Stage / unstage (non-vim) |
+| `f` | Fetch from remote (when upstream configured and not busy) |
+| `P` | Pull fast-forward (when behind remote and not diverged) |
+| `p` | Push (when push is available and not busy) |
+| `b` | Focus branch selector element |
+| `g` | Open Commit Graph (also arms pending-g for gg) |
+| `?` | Toggle keyboard help overlay |
+| `Ctrl/Cmd+R` | Refresh (always active, not vim-only) |
+
+### Empty-state behavior
+When the working tree is clean: `c`, `r`, `f`, `P`, `p`, `b`, `g`, `?` still work.
+File navigation (`j`/`k`/`gg`/`G`/`l`/`Space`) does nothing when there are no changed files.
+
+### Non-vim keys (always active)
+
+| Key | Behavior |
+|---|---|
+| `ArrowDown` / `ArrowUp` | Navigate files |
+| `Enter` | Open diff for focused entry |
+| `Space` / `s` / `S` | Stage / unstage focused entry |
 | `d` / `D` | Request discard for unstaged changes |
-
-### Escape from commit input
-
-When `vimNavigationEnabled` is on and the commit message textarea is focused,
-`Escape` refocuses the source control panel container.
+| `Ctrl/Cmd+Enter` | Commit (when in commit message textarea) |
+| `Ctrl/Cmd+G` | Generate commit message (when AI available) |
+| `Escape` | Return focus to panel container (when in commit textarea, vim mode) |
 
 ### Skipped conditions
-Vim and non-vim key handling is skipped when the event target is a
-`TEXTAREA`, `INPUT`, or `contentEditable` element.
+All key handling is skipped when the event target is a `TEXTAREA`, `INPUT`, or
+`contentEditable` element (except `Ctrl+Enter` and `Ctrl+G` which are handled
+inside the commit textarea itself).
+
+### Data attributes on action buttons
+
+| Attribute | Element |
+|---|---|
+| `data-source-control-branch` | Branch label area in header |
+| `data-source-control-commit-graph` | Commit Graph button |
+| `data-source-control-fetch` | Fetch icon button |
+| `data-source-control-pull` | Pull icon button |
+| `data-source-control-refresh` | Refresh icon button |
+| `data-source-control-push` | Push button |
+| `data-source-control-help` | Keyboard help overlay |
 
 ---
 
 ## 7. SpaceSwitcher
 
+### Vim navigation (when `vimNavigationEnabled` is true)
+
 | Key | Behavior |
 |---|---|
 | `j` | Select next item (space or tab, clamped) |
 | `k` | Select previous item (clamped) |
-| `g` (once) | Arms pending-g (800ms timeout). On second `g`: jump to first item |
+| `gg` | Jump to first item |
 | `G` | Jump to last item |
-| `Enter` | Activate selected item (switch space / jump to tab) and close |
+| `Enter` / `l` | Activate selected item (switch space / jump to tab) and close |
+| `h` | Collapse selected space (if expanded) |
 | `Escape` | Close switcher without activating |
-| `h` | Collapse the selected space (if expanded) |
-| `l` | Expand the selected space (if collapsed) |
+| `a` / `n` | Create new space |
+| `r` | Rename selected space (enters inline rename mode) |
+| `m` | Move current active tab to selected space |
+| `d` / `x` | Delete selected space (opens confirmation dialog; last space protected) |
+| `?` | Toggle keyboard help overlay |
+
+### Delete confirmation behavior
+
+`d` and `x` never delete the last remaining space. When there is more than one
+space, they open an `AlertDialog` with Cancel and Delete buttons. If the space
+has tabs, the dialog body shows how many tabs will be removed.
 
 ### Dispatch details
 
 - Uses `interpretVimListKey` for `j`/`k`/`gg`/`G`/`Enter`/`Escape`, same pattern as BufferTabPicker.
-- `h` and `l` are handled independently (after `interpretVimListKey` returns `none`) — they toggle the expanded/collapsed state of the currently selected space.
+- `h`, `l`, `a`/`n`, `r`, `d`/`x`, `m`, `?` are handled via `onUnhandledPlainKey`.
 - Skips all handling if the event target is editable (`isEditableTarget`).
 - Enter/Escape activate even when `vimNavigationEnabled` is off.
-- `j`/`k`/`gg`/`G`/`h`/`l` only work when `vimNavigationEnabled` is on.
-- Cleans up the pending-g timeout on unmount.
-- Resets selection index to 0 on open.
-- Scrolls the selected item into view.
+- `j`/`k`/`gg`/`G`/`h`/`l`/`a`/`n`/`r`/`d`/`x`/`m`/`?` only work when `vimNavigationEnabled` is on.
+- Resets selection index to 0 on open; resets `showHelp` to false on open.
+
+### Props
+
+`SpaceSwitcher` accepts `activeTabId: number | null` (passed from App.tsx active
+tab ID) used by the `m` key to identify which tab to move.
 
 ---
 

@@ -1,3 +1,13 @@
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -6,6 +16,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Kbd } from "@/components/ui/kbd";
 import {
   FileAddIcon,
   Folder01Icon,
@@ -252,6 +263,12 @@ const FileExplorerContent = memo(
     // re-anchors to the new cursor (floating-ui won't reposition on an anchor
     // change alone, only on scroll/resize).
     const [menuNonce, setMenuNonce] = useState(0);
+    const [showHelp, setShowHelp] = useState(false);
+    const [deleteTarget, setDeleteTarget] = useState<{
+      path: string;
+      name: string;
+      isDir: boolean;
+    } | null>(null);
 
     const entryPaths = useMemo<string[]>(() => {
       const out: string[] = [];
@@ -439,6 +456,30 @@ const FileExplorerContent = memo(
         tree.beginCreate(targetDir, "dir");
       },
       onRefresh: () => tree.refresh(rootPath),
+      onRenameSelected: (id) => {
+        const idx = entryIndexByPath.get(id);
+        if (idx === undefined) return;
+        const row = rows[idx];
+        if (!row || row.kind !== "entry") return;
+        tree.beginRename(row.path);
+      },
+      onDeleteSelected: (id) => {
+        const idx = entryIndexByPath.get(id);
+        if (idx === undefined) return;
+        const row = rows[idx];
+        if (!row || row.kind !== "entry") return;
+        setDeleteTarget({ path: row.path, name: row.name, isDir: row.isDir });
+      },
+      onCopyPathSelected: (id) => {
+        void copyToClipboard(id);
+      },
+      onCopyRelativePathSelected: (id) => {
+        void copyToClipboard(relativePath(rootPath, id));
+      },
+      onRevealSelected: (id) => {
+        void revealInFinder(id);
+      },
+      onToggleHelp: () => setShowHelp((v) => !v),
       isEventTargetIgnored: (target) => {
         if (!target || !(target instanceof HTMLElement)) return false;
         return (
@@ -452,6 +493,7 @@ const FileExplorerContent = memo(
 
     const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (tree.renaming || tree.pendingCreate) return;
+      if (deleteTarget !== null) return;
 
       if (vimNavigationEnabled && e.ctrlKey && e.key === "k") {
         e.preventDefault();
@@ -502,6 +544,7 @@ const FileExplorerContent = memo(
     };
 
     return (
+      <>
       <div
         ref={containerRef}
         className="flex h-full flex-col outline-none"
@@ -562,8 +605,47 @@ const FileExplorerContent = memo(
           >
             <HugeiconsIcon icon={Refresh01Icon} size={12} strokeWidth={2} />
           </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="size-6 text-muted-foreground hover:text-foreground"
+            onClick={() => setShowHelp((v) => !v)}
+            title="Keyboard help"
+            aria-label="Keyboard help"
+          >
+            <span className="text-[11px] font-semibold">?</span>
+          </Button>
         </div>
 
+        {showHelp && (
+          <div
+            data-file-explorer-help
+            className="shrink-0 border-b border-border/60 bg-muted/20 px-3 py-2 text-[10px]"
+          >
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+              {([
+                ["j / k", "navigate"],
+                ["h / l", "collapse / expand"],
+                ["Enter / o", "open"],
+                ["a", "new file"],
+                ["A", "new folder"],
+                ["r", "rename"],
+                ["d / x", "delete"],
+                ["y", "copy path"],
+                ["Y", "copy relative"],
+                ["O", "reveal in OS"],
+                ["R", "refresh"],
+                ["/", "search"],
+                ["?", "help"],
+              ] as [string, string][]).map(([key, label]) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <Kbd className="h-4 bg-muted/60 text-[9px] px-1 font-mono shrink-0">{key}</Kbd>
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <ExplorerSearch
           ref={searchRef}
           rootPath={rootPath}
@@ -841,6 +923,41 @@ const FileExplorerContent = memo(
           </div>
         ) : null}
       </div>
+
+      <AlertDialog
+        open={deleteTarget !== null}
+        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+      >
+        <AlertDialogContent data-file-explorer-delete-dialog="">
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {deleteTarget?.isDir ? "Delete folder?" : "Delete file?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {deleteTarget?.isDir
+                ? `Delete "${deleteTarget.name}" and all its contents? This cannot be undone.`
+                : `Delete "${deleteTarget?.name}"? This cannot be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => {
+                if (deleteTarget) {
+                  const deletedPath = deleteTarget.path;
+                  void tree.deletePath(deletedPath).then(() => {
+                    setDeleteTarget(null);
+                    setSelectedPath((prev) => prev === deletedPath ? null : prev);
+                  });
+                }
+              }}
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+      </>
     );
   }),
 );

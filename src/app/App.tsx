@@ -1135,6 +1135,7 @@ export default function App() {
       onMoveTabToSpace={handleMoveTab}
       onReorderTab={handleReorderTab}
       onReorderSpaces={(ids) => useSpaces.getState().reorder(ids)}
+      activeTabId={activeId}
     />
   );
 

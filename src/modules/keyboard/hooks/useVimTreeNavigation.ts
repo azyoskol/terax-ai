@@ -24,6 +24,13 @@ export type VimTreeNavigationOptions = {
   onCreateFolder?: () => void;
   onRefresh?: () => void;
 
+  onRenameSelected?: (id: string) => void;
+  onDeleteSelected?: (id: string) => void;
+  onCopyPathSelected?: (id: string) => void;
+  onCopyRelativePathSelected?: (id: string) => void;
+  onRevealSelected?: (id: string) => void;
+  onToggleHelp?: () => void;
+
   isEventTargetIgnored?: (target: EventTarget | null) => boolean;
   scrollToId?: (id: string) => void;
 };
@@ -64,6 +71,12 @@ export function useVimTreeNavigation(options: VimTreeNavigationOptions) {
     onRefresh,
     isEventTargetIgnored,
     scrollToId,
+    onRenameSelected,
+    onDeleteSelected,
+    onCopyPathSelected,
+    onCopyRelativePathSelected,
+    onRevealSelected,
+    onToggleHelp,
   } = options;
 
   const pendingGRef = useRef<number | null>(null);
@@ -99,6 +112,48 @@ export function useVimTreeNavigation(options: VimTreeNavigationOptions) {
           e.preventDefault();
           e.stopPropagation();
           onRefresh?.();
+          return;
+        }
+        if (e.key === "r" && onRenameSelected && selectedIdRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onRenameSelected(selectedIdRef.current);
+          return;
+        }
+        if ((e.key === "d" || e.key === "x") && onDeleteSelected && selectedIdRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onDeleteSelected(selectedIdRef.current);
+          return;
+        }
+        if (e.key === "y" && onCopyPathSelected && selectedIdRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onCopyPathSelected(selectedIdRef.current);
+          return;
+        }
+        if (e.key === "Y" && onCopyRelativePathSelected && selectedIdRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onCopyRelativePathSelected(selectedIdRef.current);
+          return;
+        }
+        if (e.key === "O" && onRevealSelected && selectedIdRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onRevealSelected(selectedIdRef.current);
+          return;
+        }
+        if (e.key === "?" && onToggleHelp) {
+          e.preventDefault();
+          e.stopPropagation();
+          onToggleHelp();
+          return;
+        }
+        if (e.key === "o" && selectedIdRef.current) {
+          e.preventDefault();
+          e.stopPropagation();
+          onActivate?.(selectedIdRef.current);
           return;
         }
       }
@@ -153,7 +208,10 @@ export function useVimTreeNavigation(options: VimTreeNavigationOptions) {
       }
 
       const key = enabled ? normalizeVimKey(e.key) : e.key;
-      if (e.key === "/" || e.key === "a" || e.key === "A" || e.key === "R") {
+      if (e.key === "/" || e.key === "a" || e.key === "A" || e.key === "R"
+        || e.key === "r" || e.key === "d" || e.key === "x"
+        || e.key === "y" || e.key === "Y" || e.key === "O"
+        || e.key === "?" || e.key === "o") {
         return;
       }
       switch (key) {
@@ -222,6 +280,12 @@ export function useVimTreeNavigation(options: VimTreeNavigationOptions) {
       onCreateFile,
       onCreateFolder,
       onRefresh,
+      onRenameSelected,
+      onDeleteSelected,
+      onCopyPathSelected,
+      onCopyRelativePathSelected,
+      onRevealSelected,
+      onToggleHelp,
       isEventTargetIgnored,
       scrollToId,
     ],

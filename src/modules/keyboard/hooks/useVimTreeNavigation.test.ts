@@ -331,4 +331,168 @@ describe("useVimTreeNavigation", () => {
       expect(selectedId).toBe("/root/d");
     });
   });
+  describe("o opens selected item (alias for Enter)", () => {
+    it("calls onActivate with selected id", () => {
+      const hook = renderHook(createOptions());
+      hook.onKeyDown(makeEvent("o"));
+      expect(onActivate).toHaveBeenCalledWith("/root/a");
+    });
+
+    it("does nothing when no item is selected", () => {
+      const hook = renderHook(createOptions({ selectedId: null }));
+      hook.onKeyDown(makeEvent("o"));
+      expect(onActivate).not.toHaveBeenCalled();
+    });
+
+    it("does not fire when enabled is false", () => {
+      const hook = renderHook(createOptions({ enabled: false }));
+      hook.onKeyDown(makeEvent("o"));
+      expect(onActivate).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("r renames selected item", () => {
+    it("calls onRenameSelected with selected id", () => {
+      const onRenameSelected = vi.fn();
+      const hook = renderHook(createOptions({ onRenameSelected }));
+      hook.onKeyDown(makeEvent("r"));
+      expect(onRenameSelected).toHaveBeenCalledWith("/root/a");
+    });
+
+    it("does nothing when no item is selected", () => {
+      const onRenameSelected = vi.fn();
+      const hook = renderHook(createOptions({ onRenameSelected, selectedId: null }));
+      hook.onKeyDown(makeEvent("r"));
+      expect(onRenameSelected).not.toHaveBeenCalled();
+    });
+
+    it("does not fire when enabled is false", () => {
+      const onRenameSelected = vi.fn();
+      const hook = renderHook(createOptions({ onRenameSelected, enabled: false }));
+      hook.onKeyDown(makeEvent("r"));
+      expect(onRenameSelected).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("d/x deletes selected item", () => {
+    it("d calls onDeleteSelected with selected id", () => {
+      const onDeleteSelected = vi.fn();
+      const hook = renderHook(createOptions({ onDeleteSelected }));
+      hook.onKeyDown(makeEvent("d"));
+      expect(onDeleteSelected).toHaveBeenCalledWith("/root/a");
+    });
+
+    it("x calls onDeleteSelected with selected id", () => {
+      const onDeleteSelected = vi.fn();
+      const hook = renderHook(createOptions({ onDeleteSelected }));
+      hook.onKeyDown(makeEvent("x"));
+      expect(onDeleteSelected).toHaveBeenCalledWith("/root/a");
+    });
+
+    it("does nothing when no item is selected", () => {
+      const onDeleteSelected = vi.fn();
+      const hook = renderHook(createOptions({ onDeleteSelected, selectedId: null }));
+      hook.onKeyDown(makeEvent("d"));
+      expect(onDeleteSelected).not.toHaveBeenCalled();
+    });
+
+    it("does not fire when enabled is false", () => {
+      const onDeleteSelected = vi.fn();
+      const hook = renderHook(createOptions({ onDeleteSelected, enabled: false }));
+      hook.onKeyDown(makeEvent("d"));
+      expect(onDeleteSelected).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("y/Y copies path", () => {
+    it("y calls onCopyPathSelected with selected id", () => {
+      const onCopyPathSelected = vi.fn();
+      const hook = renderHook(createOptions({ onCopyPathSelected }));
+      hook.onKeyDown(makeEvent("y"));
+      expect(onCopyPathSelected).toHaveBeenCalledWith("/root/a");
+    });
+
+    it("Y calls onCopyRelativePathSelected with selected id", () => {
+      const onCopyRelativePathSelected = vi.fn();
+      const hook = renderHook(createOptions({ onCopyRelativePathSelected }));
+      hook.onKeyDown(makeEvent("Y"));
+      expect(onCopyRelativePathSelected).toHaveBeenCalledWith("/root/a");
+    });
+
+    it("y does nothing when no item is selected", () => {
+      const onCopyPathSelected = vi.fn();
+      const hook = renderHook(createOptions({ onCopyPathSelected, selectedId: null }));
+      hook.onKeyDown(makeEvent("y"));
+      expect(onCopyPathSelected).not.toHaveBeenCalled();
+    });
+
+    it("y does not fire when enabled is false", () => {
+      const onCopyPathSelected = vi.fn();
+      const hook = renderHook(createOptions({ onCopyPathSelected, enabled: false }));
+      hook.onKeyDown(makeEvent("y"));
+      expect(onCopyPathSelected).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("O reveals selected item in OS", () => {
+    it("calls onRevealSelected with selected id", () => {
+      const onRevealSelected = vi.fn();
+      const hook = renderHook(createOptions({ onRevealSelected }));
+      hook.onKeyDown(makeEvent("O"));
+      expect(onRevealSelected).toHaveBeenCalledWith("/root/a");
+    });
+
+    it("does nothing when no item is selected", () => {
+      const onRevealSelected = vi.fn();
+      const hook = renderHook(createOptions({ onRevealSelected, selectedId: null }));
+      hook.onKeyDown(makeEvent("O"));
+      expect(onRevealSelected).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("? toggles help", () => {
+    it("calls onToggleHelp", () => {
+      const onToggleHelp = vi.fn();
+      const hook = renderHook(createOptions({ onToggleHelp }));
+      hook.onKeyDown(makeEvent("?"));
+      expect(onToggleHelp).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not fire when enabled is false", () => {
+      const onToggleHelp = vi.fn();
+      const hook = renderHook(createOptions({ onToggleHelp, enabled: false }));
+      hook.onKeyDown(makeEvent("?"));
+      expect(onToggleHelp).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("new action keys do not trigger in search/rename inputs", () => {
+    it("r is ignored when event target is an input", () => {
+      const onRenameSelected = vi.fn();
+      const hook = renderHook(
+        createOptions({
+          onRenameSelected,
+          isEventTargetIgnored: (target) =>
+            (target as HTMLElement | null)?.tagName === "INPUT",
+        }),
+      );
+      const ev = { ...makeEvent("r"), target: { tagName: "INPUT" } } as unknown as KeyboardEvent;
+      hook.onKeyDown(ev);
+      expect(onRenameSelected).not.toHaveBeenCalled();
+    });
+
+    it("d is ignored when event target is a textarea", () => {
+      const onDeleteSelected = vi.fn();
+      const hook = renderHook(
+        createOptions({
+          onDeleteSelected,
+          isEventTargetIgnored: (target) =>
+            (target as HTMLElement | null)?.tagName === "TEXTAREA",
+        }),
+      );
+      const ev = { ...makeEvent("d"), target: { tagName: "TEXTAREA" } } as unknown as KeyboardEvent;
+      hook.onKeyDown(ev);
+      expect(onDeleteSelected).not.toHaveBeenCalled();
+    });
+  });
 });

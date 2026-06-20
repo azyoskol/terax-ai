@@ -17,6 +17,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Kbd } from "@/components/ui/kbd";
 import { Spinner } from "@/components/ui/spinner";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -159,6 +160,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
   const refreshAnimationRef = useRef<number | null>(null);
   const [refreshAnimating, setRefreshAnimating] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const commitInputRef = useRef<HTMLTextAreaElement>(null);
@@ -466,6 +468,43 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             }
             return;
           }
+          if (event.key === 'f') {
+            if (canFetch) {
+              event.preventDefault();
+              handleFetch();
+            }
+            return;
+          }
+          if (event.key === 'P') {
+            if (canPull) {
+              event.preventDefault();
+              handlePull();
+            }
+            return;
+          }
+          if (event.key === 'p') {
+            if (scm.canPush && !scm.actionBusy) {
+              event.preventDefault();
+              void scm.push();
+            }
+            return;
+          }
+          if (event.key === 'b') {
+            event.preventDefault();
+            const branchEl = document.querySelector<HTMLElement>('[data-source-control-branch]');
+            branchEl?.focus();
+            return;
+          }
+          if (event.key === 'g' && onOpenGitGraph) {
+            event.preventDefault();
+            onOpenGitGraph();
+            return;
+          }
+          if (event.key === '?') {
+            event.preventDefault();
+            setShowHelp(v => !v);
+            return;
+          }
         }
         return;
       }
@@ -515,8 +554,14 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       vimNavigationEnabled,
       focusedEntry,
       handleRefresh,
+      handleFetch,
+      handlePull,
       moveFocus,
       scm,
+      canFetch,
+      canPull,
+      onOpenGitGraph,
+      setShowHelp,
       focusFirstChange,
       focusLastChange,
       focusCommitInput,
@@ -539,7 +584,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       >
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3 pb-2.5 pt-3">
           <div className="flex min-w-0 items-center gap-1.5">
-            <div className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10">
+            <div tabIndex={-1} data-source-control-branch="" className="inline-flex min-w-0 items-center gap-1.5 rounded-md bg-foreground/5 px-2 py-1 text-[11.5px] font-medium leading-none text-foreground transition-colors hover:bg-foreground/10">
               <HugeiconsIcon
                 icon={FolderGitTwoIcon}
                 size={12}
@@ -581,9 +626,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           <div className="flex shrink-0 items-center gap-0.5">
             <IconActionButton
               label={fetchBusy ? "Fetching…" : "Fetch from remote"}
+              keyHint={fetchBusy ? undefined : "f"}
               disabled={!canFetch}
               onClick={handleFetch}
               side="bottom"
+              data-source-control-fetch=""
             >
               {fetchBusy ? (
                 <Spinner className="size-3" />
@@ -600,16 +647,18 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 pullBusy
                   ? "Pulling…"
                   : isDiverged
-                    ? "Branch diverged — resolve in terminal"
+                    ? "Branch diverged -- resolve in terminal"
                     : !hasUpstream
                       ? "No upstream configured"
                       : (scm.status?.behind ?? 0) === 0
                         ? "Already up to date"
                         : `Pull ${scm.status?.behind ?? 0} commits (fast-forward)`
               }
+              keyHint={canPull ? "P" : undefined}
               disabled={!canPull}
               onClick={handlePull}
               side="bottom"
+              data-source-control-pull=""
             >
               {pullBusy ? (
                 <Spinner className="size-3" />
@@ -623,9 +672,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             </IconActionButton>
             <IconActionButton
               label="Refresh source control"
+              keyHint="r"
               disabled={isRefreshing || !!scm.actionBusy}
               onClick={handleRefresh}
               side="bottom"
+              data-source-control-refresh=""
             >
               {isRefreshing ? (
                 <Spinner className="size-3.5" />
@@ -638,12 +689,22 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                 />
               )}
             </IconActionButton>
+            <button
+              type="button"
+              aria-label="Toggle keyboard help"
+              title="Toggle keyboard help"
+              onClick={() => setShowHelp(v => !v)}
+              className="inline-flex size-6 cursor-pointer items-center justify-center rounded-md text-muted-foreground/65 transition-colors hover:bg-foreground/[0.06] hover:text-foreground"
+            >
+              <span className="text-[11px] font-semibold">?</span>
+            </button>
           </div>
         </header>
 
         {onOpenGitGraph ? (
           <button
             type="button"
+            data-source-control-commit-graph=""
             onClick={() => onOpenGitGraph()}
             className="group flex shrink-0 cursor-pointer items-center gap-2 border-b border-border/40 px-3 py-2 text-left text-muted-foreground transition-colors hover:bg-foreground/[0.04] hover:text-foreground"
           >
@@ -662,6 +723,34 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             />
           </button>
         ) : null}
+
+        {showHelp && (
+          <div
+            data-source-control-help=""
+            className="shrink-0 border-b border-border/40 bg-muted/20 px-3 py-2"
+          >
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-[10px] text-muted-foreground">
+              {([
+                ['j / k', 'navigate files'],
+                ['gg / G', 'first / last'],
+                ['Space', 'stage / unstage'],
+                ['Enter / l', 'open diff'],
+                ['c', 'commit message'],
+                ['r', 'refresh'],
+                ['f', 'fetch'],
+                ['P', 'pull'],
+                ['p', 'push'],
+                ['g', 'commit graph'],
+                ['?', 'help'],
+              ] as [string, string][]).map(([key, label]) => (
+                <div key={key} className="flex items-center gap-1.5">
+                  <Kbd className="h-4 bg-muted/60 text-[9px] px-1 font-mono shrink-0">{key}</Kbd>
+                  <span>{label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {scm.panelState === "loading" ? (
           <PanelCenter title="Loading repository" />
@@ -813,6 +902,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                     <Button
                       size="xs"
                       variant="secondary"
+                      data-source-control-push=""
                       className="h-7 cursor-pointer text-[11.5px] font-medium disabled:cursor-not-allowed"
                       disabled={!scm.canPush || !!scm.actionBusy}
                       onClick={() => void scm.push()}
@@ -1260,16 +1350,20 @@ const EntryRow = memo(function EntryRow({
 
 function IconActionButton({
   label,
+  keyHint,
   disabled,
   side = "left",
   onClick,
   children,
+  ...dataProps
 }: {
   label: string;
+  keyHint?: string;
   disabled?: boolean;
   side?: "left" | "top" | "right" | "bottom";
   onClick: () => void;
   children: ReactNode;
+  [key: `data-${string}`]: string | undefined;
 }) {
   return (
     <Tooltip>
@@ -1281,15 +1375,19 @@ function IconActionButton({
           aria-label={label}
           disabled={disabled}
           onClick={onClick}
+          {...dataProps}
         >
           {children}
         </Button>
       </TooltipTrigger>
       <TooltipContent
         side={side}
-        className={cn(SOURCE_CONTROL_TOOLTIP_CLASS, "text-[10.5px]")}
+        className={cn(SOURCE_CONTROL_TOOLTIP_CLASS, "text-[10.5px] flex items-center gap-1.5")}
       >
-        {label}
+        <span>{label}</span>
+        {keyHint && (
+          <Kbd className="h-4 bg-muted/20 text-[9px] border-muted/30 px-1">{keyHint}</Kbd>
+        )}
       </TooltipContent>
     </Tooltip>
   );
