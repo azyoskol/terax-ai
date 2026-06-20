@@ -210,7 +210,9 @@ export default function App() {
   useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
 
-  // Register keyboard surfaces for focus management
+  // Register keyboard surfaces for focus management.
+  // TODO: This runs once on mount with empty deps, but refs may not exist yet.
+  // Move registration into individual surface components using useRegisterSurface.
   useEffect(() => {
     const unsubs: (() => void)[] = [];
 
