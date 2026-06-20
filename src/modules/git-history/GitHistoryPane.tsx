@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 import {
   Popover,
   PopoverAnchor,
@@ -13,6 +14,11 @@ import {
   type GitLogEntry,
 } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
+import { isEditableTarget } from "@/modules/keyboard/core/targets";
+import {
+  interpretVimListKey,
+  isPlainVimKey,
+} from "@/modules/keyboard/core/vimList";
 import {
   Copy01Icon,
   File02Icon,
@@ -219,6 +225,10 @@ export function GitHistoryPane({
     height: number;
   } | null>(null);
   const [remoteWeb, setRemoteWeb] = useState<RemoteWebInfo | null>(null);
+  const [selectedSha, setSelectedSha] = useState<string | null>(null);
+  const [showHelp, setShowHelp] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const pendingGRef = useRef<number | null>(null);
   const filesCacheRef = useRef(new Map<string, FilesEntry>());
   const [filesTick, setFilesTick] = useState(0);
   const bumpFiles = useCallback(() => setFilesTick((n) => n + 1), []);
@@ -386,6 +396,21 @@ export function GitHistoryPane({
     };
   }, [repoRoot]);
 
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          requestAnimationFrame(() => el.focus());
+        }
+      },
+      { threshold: 0 },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const handleScroll = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -450,6 +475,191 @@ export function GitHistoryPane({
     [repoRoot],
   );
 
+  const copyToClipboard = useCallback(async (value: string) => {
+    try {
+      await navigator.clipboard.writeText(value);
+    } catch {
+      /* noop */
+    }
+  }, []);
+
+  const openCommitDetails = useCallback(
+    (sha: string) => {
+      if (openAnchor?.sha === sha) {
+        setOpenAnchor(null);
+        return;
+      }
+      const commit = filtered.find((c) => c.sha === sha);
+      if (!commit) return;
+      const el = scrollRef.current;
+      const virtualIdx = filtered.findIndex((c) => c.sha === sha);
+      const virtualRow = virtualIdx >= 0
+        ? virtualizer.getVirtualItems().find((v) => v.index === virtualIdx)
+        : null;
+      const top = virtualRow && el
+        ? el.getBoundingClientRect().top + virtualRow.start
+        : window.innerHeight / 2;
+      const POPOVER_WIDTH = 420;
+      const PADDING = 16;
+      const maxLeft = window.innerWidth - POPOVER_WIDTH - PADDING;
+      const left = Math.max(PADDING, Math.min(window.innerWidth / 2, maxLeft));
+      setOpenAnchor({ sha, top, left, width: 1, height: 1 });
+      void fetchFiles(sha);
+    },
+    [filtered, fetchFiles, openAnchor?.sha, virtualizer],
+  );
+
+  const selectedIndex = useMemo(() => {
+    if (!selectedSha) return -1;
+    return filtered.findIndex((c) => c.sha === selectedSha);
+  }, [filtered, selectedSha]);
+
+  useEffect(() => {
+    if (selectedSha && !filtered.some((c) => c.sha === selectedSha)) {
+      setSelectedSha(filtered.length > 0 ? filtered[0].sha : null);
+    }
+  }, [filtered, selectedSha]);
+
+  useEffect(() => {
+    if (selectedIndex >= 0) {
+      virtualizer.scrollToIndex(selectedIndex, { align: "auto" });
+    }
+  }, [selectedIndex, virtualizer]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      const target = e.target as HTMLElement | null;
+      if (isEditableTarget(target)) return;
+
+      if (showHelp) {
+        if (e.key === "Escape" || e.key === "?") {
+          e.preventDefault();
+          e.stopPropagation();
+          setShowHelp(false);
+        }
+        return;
+      }
+
+      const action = interpretVimListKey(e, pendingGRef);
+
+      if (e.key === "r" && isPlainVimKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleRefresh();
+        return;
+      }
+
+      if (e.key === "?" && isPlainVimKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowHelp(true);
+        return;
+      }
+
+      if (e.key === "o" && isPlainVimKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedSha && remoteWeb) {
+          const commit = filtered.find((c) => c.sha === selectedSha);
+          if (commit) {
+            const url = commitWebUrl(remoteWeb, commit.sha);
+            void openUrl(url).catch(console.error);
+          }
+        }
+        return;
+      }
+
+      if (e.key === "y" && isPlainVimKey(e) && !e.shiftKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedSha) void copyToClipboard(selectedSha);
+        return;
+      }
+
+      if (e.key === "Y" && isPlainVimKey(e)) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (selectedSha) {
+          const commit = filtered.find((c) => c.sha === selectedSha);
+          if (commit) void copyToClipboard(commit.sha);
+        }
+        return;
+      }
+
+      switch (action.kind) {
+        case "next": {
+          e.preventDefault();
+          e.stopPropagation();
+          if (filtered.length === 0) return;
+          setSelectedSha((prev) => {
+            const idx = prev
+              ? filtered.findIndex((c) => c.sha === prev)
+              : -1;
+            const next = idx < 0 ? 0 : Math.min(idx + 1, filtered.length - 1);
+            return filtered[next]?.sha ?? null;
+          });
+          return;
+        }
+        case "prev": {
+          e.preventDefault();
+          e.stopPropagation();
+          if (filtered.length === 0) return;
+          setSelectedSha((prev) => {
+            const idx = prev
+              ? filtered.findIndex((c) => c.sha === prev)
+              : 0;
+            const next = idx < 0 ? 0 : Math.max(idx - 1, 0);
+            return filtered[next]?.sha ?? null;
+          });
+          return;
+        }
+        case "first": {
+          e.preventDefault();
+          e.stopPropagation();
+          if (filtered.length === 0) return;
+          setSelectedSha(filtered[0].sha);
+          return;
+        }
+        case "last": {
+          e.preventDefault();
+          e.stopPropagation();
+          if (filtered.length === 0) return;
+          setSelectedSha(filtered[filtered.length - 1].sha);
+          return;
+        }
+        case "activate": {
+          e.preventDefault();
+          e.stopPropagation();
+          if (selectedSha) openCommitDetails(selectedSha);
+          return;
+        }
+        case "escape": {
+          e.preventDefault();
+          e.stopPropagation();
+          if (openAnchor) {
+            setOpenAnchor(null);
+          } else {
+            containerRef.current?.blur();
+          }
+          return;
+        }
+        case "armG":
+        case "none":
+          return;
+      }
+    },
+    [
+      showHelp,
+      handleRefresh,
+      selectedSha,
+      filtered,
+      openAnchor,
+      openCommitDetails,
+      remoteWeb,
+      copyToClipboard,
+    ],
+  );
+
   const handleRowClick = useCallback(
     (sha: string, event: React.MouseEvent<HTMLElement>) => {
       if (openAnchor?.sha === sha) {
@@ -496,17 +706,17 @@ export function GitHistoryPane({
     [onOpenCommitFile, repoRoot],
   );
 
-  const copyToClipboard = useCallback(async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-    } catch {
-      /* noop */
-    }
-  }, []);
-
   return (
     <TooltipProvider delayDuration={500} skipDelayDuration={200}>
-      <div className="flex h-full min-h-0 flex-col bg-background [contain:layout_style]">
+      <div
+        ref={containerRef}
+        tabIndex={0}
+        role="grid"
+        aria-label="Git commit history"
+        data-git-history=""
+        onKeyDown={handleKeyDown}
+        className="flex h-full min-h-0 flex-col bg-background [contain:layout_style] outline-none"
+      >
         {loadStatus === "initial" && commits.length === 0 ? (
           <CenterPlaceholder>
             <Spinner className="size-4" />
@@ -581,6 +791,7 @@ export function GitHistoryPane({
                         commit={commit}
                         query={activeSearch}
                         active={openAnchor?.sha === commit.sha}
+                        selected={selectedSha === commit.sha}
                         graphRow={graphByCommit.get(commit.sha) ?? null}
                         maxLaneCount={maxLaneCount}
                         gridTemplate={gridTemplate}
@@ -671,6 +882,63 @@ export function GitHistoryPane({
               : null}
           </PopoverContent>
         </Popover>
+
+        {showHelp ? (
+          <div
+            data-git-history-help=""
+            role="button"
+            tabIndex={-1}
+            className="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm"
+            onClick={() => setShowHelp(false)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
+                setShowHelp(false);
+              }
+            }}
+          >
+            <div
+              role="dialog"
+              aria-label="Keyboard shortcuts"
+              className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-5 shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-[13px] font-semibold text-foreground">
+                Git History Keyboard Shortcuts
+              </div>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11.5px]">
+                <span className="text-muted-foreground">Navigate</span>
+                <span>
+                  <Kbd>j</Kbd> / <Kbd>k</Kbd>
+                </span>
+                <span className="text-muted-foreground">First / Last</span>
+                <span>
+                  <Kbd>gg</Kbd> / <Kbd>G</Kbd>
+                </span>
+                <span className="text-muted-foreground">Details</span>
+                <span>
+                  <Kbd>Enter</Kbd> / <Kbd>Space</Kbd>
+                </span>
+                <span className="text-muted-foreground">Close details</span>
+                <Kbd>Esc</Kbd>
+                <span className="text-muted-foreground">Refresh</span>
+                <Kbd>r</Kbd>
+                <span className="text-muted-foreground">Open on remote</span>
+                <Kbd>o</Kbd>
+                <span className="text-muted-foreground">Copy SHA</span>
+                <Kbd>y</Kbd>
+                <span className="text-muted-foreground">Help</span>
+                <Kbd>?</Kbd>
+              </div>
+              <button
+                type="button"
+                className="mt-1 self-end text-[11px] text-muted-foreground hover:text-foreground"
+                onClick={() => setShowHelp(false)}
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </TooltipProvider>
   );
@@ -688,6 +956,7 @@ type CommitRowProps = {
   commit: GitLogEntry;
   query: string;
   active: boolean;
+  selected: boolean;
   graphRow: GraphRow | null;
   maxLaneCount: number;
   gridTemplate: string;
@@ -698,6 +967,7 @@ const CommitRow = memo(function CommitRow({
   commit,
   query,
   active,
+  selected,
   graphRow,
   maxLaneCount,
   gridTemplate,
@@ -709,10 +979,17 @@ const CommitRow = memo(function CommitRow({
   return (
     <button
       type="button"
+      data-git-history-row=""
+      data-commit-sha={commit.sha}
+      data-selected={selected || undefined}
       onClick={(event) => onClick(commit.sha, event)}
       className={cn(
         "group relative grid h-full w-full cursor-pointer items-center gap-3 border-l-2 border-transparent pr-3 text-left transition-colors",
-        active ? "border-l-primary/70 bg-accent/45" : "hover:bg-accent/25",
+        active
+          ? "border-l-primary/70 bg-accent/45"
+          : selected
+            ? "bg-accent/30"
+            : "hover:bg-accent/25",
       )}
       style={{ gridTemplateColumns: gridTemplate }}
     >

@@ -38,6 +38,7 @@ import {
   COMPACT_ITEM,
 } from "@/modules/explorer/lib/menuItemClass";
 import { joinPath } from "@/modules/explorer/lib/useFileTree";
+import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -715,6 +716,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
               className="shrink-0"
             />
             <span className="flex-1 text-[12px] font-medium">Commit Graph</span>
+            <Kbd className="text-[10px] opacity-50">g</Kbd>
             <HugeiconsIcon
               icon={ArrowRight01Icon}
               size={12}
@@ -996,7 +998,14 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           if (!o) scm.cancelPendingDiscard();
         }}
       >
-        <AlertDialogContent>
+        <AlertDialogContent
+          onKeyDown={(e) =>
+            handleConfirmDialogKeyDown(e, {
+              confirm: () => void scm.confirmPendingDiscard(),
+              cancel: () => scm.cancelPendingDiscard(),
+            })
+          }
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Discard changes?</AlertDialogTitle>
             <AlertDialogDescription>

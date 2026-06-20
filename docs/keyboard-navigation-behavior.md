@@ -128,6 +128,7 @@ Implementation details:
 `d` and `x` never delete immediately. They open an `AlertDialog`:
 - Title: "Delete file?" or "Delete folder?"
 - Body shows the item name; folder deletion mentions recursive removal.
+- Keyboard contract: `Enter`/`y`/`Y` confirm; `n`/`N`/`Escape` cancel.
 - Cancel dismisses without any change.
 - Confirm calls `fs_delete` and clears the selection if it pointed to the deleted path.
 - If deletion fails, selection stays on the failed item.
@@ -212,7 +213,7 @@ File navigation (`j`/`k`/`gg`/`G`/`l`/`Space`) does nothing when there are no ch
 | `ArrowDown` / `ArrowUp` | Navigate files |
 | `Enter` | Open diff for focused entry |
 | `Space` / `s` / `S` | Stage / unstage focused entry |
-| `d` / `D` | Request discard for unstaged changes |
+| `d` / `D` | Request discard for unstaged changes (opens confirmation dialog) |
 | `Ctrl/Cmd+Enter` | Commit (when in commit message textarea) |
 | `Ctrl/Cmd+G` | Generate commit message (when AI available) |
 | `Escape` | Return focus to panel container (when in commit textarea, vim mode) |
@@ -221,6 +222,11 @@ File navigation (`j`/`k`/`gg`/`G`/`l`/`Space`) does nothing when there are no ch
 All key handling is skipped when the event target is a `TEXTAREA`, `INPUT`, or
 `contentEditable` element (except `Ctrl+Enter` and `Ctrl+G` which are handled
 inside the commit textarea itself).
+
+### Discard confirmation behavior
+
+`d`/`D` opens an `AlertDialog` for discarding unstaged changes:
+- Keyboard contract: `Enter`/`y`/`Y` confirm; `n`/`N`/`Escape` cancel.
 
 ### Data attributes on action buttons
 
@@ -236,7 +242,61 @@ inside the commit textarea itself).
 
 ---
 
-## 7. SpaceSwitcher
+## 7. Git History / Commit Graph
+
+### Focus behavior
+
+- The Git History pane is focusable (`tabIndex={0}`, `data-git-history`).
+- On first open, the pane auto-focuses via IntersectionObserver.
+- When re-activating an existing tab, the pane refocuses automatically.
+- Pressing `g` in Source Control opens or focuses the Commit Graph.
+
+### Vim navigation (when pane is focused)
+
+| Key | Behavior |
+|---|---|
+| `j` / `ArrowDown` | Select next commit |
+| `k` / `ArrowUp` | Select previous commit |
+| `gg` | Select first commit |
+| `G` | Select last commit |
+| `Enter` / `Space` | Open/toggle commit details popover |
+| `Escape` | Close details if open; otherwise blur the pane |
+| `r` | Refresh commit history |
+| `?` | Toggle keyboard help overlay |
+| `o` | Open commit on remote web (if remote URL exists) |
+| `y` | Copy selected short SHA to clipboard |
+| `Y` | Copy selected full SHA to clipboard |
+
+### Selection model
+
+- `selectedSha` tracks the currently selected commit.
+- When filtering changes and the selected SHA no longer exists, the first
+  commit is auto-selected.
+- The virtualizer scrolls the selected row into view.
+
+### Data attributes
+
+| Attribute | Element |
+|---|---|
+| `data-git-history` | Root focusable container |
+| `data-git-history-row` | Each commit row button |
+| `data-commit-sha` | SHA on each row |
+| `data-selected` | Present when row is keyboard-selected |
+| `data-git-history-help` | Keyboard help overlay |
+
+### Non-vim keys (always active)
+
+- Click on a commit row opens its details popover (mouse interaction).
+
+### Skipped conditions
+
+- Navigation keys are ignored when the event target is an input, textarea,
+  or contentEditable element.
+- The `?` help overlay captures focus; pressing Escape or `?` again closes it.
+
+---
+
+## 8. SpaceSwitcher
 
 ### Vim navigation (when `vimNavigationEnabled` is true)
 
@@ -261,6 +321,8 @@ inside the commit textarea itself).
 space, they open an `AlertDialog` with Cancel and Delete buttons. If the space
 has tabs, the dialog body shows how many tabs will be removed.
 
+Keyboard contract: `Enter`/`y`/`Y` confirm; `n`/`N`/`Escape` cancel.
+
 ### Dispatch details
 
 - Uses `interpretVimListKey` for `j`/`k`/`gg`/`G`/`Enter`/`Escape`, same pattern as BufferTabPicker.
@@ -277,7 +339,7 @@ tab ID) used by the `m` key to identify which tab to move.
 
 ---
 
-## 8. Shared Utilities (src/modules/keyboard/core/vimList.ts)
+## 9. Shared Utilities (src/modules/keyboard/core/vimList.ts)
 
 ### `interpretVimListKey(e, pendingGRef)`
 
@@ -317,7 +379,31 @@ Returns `none` for unrecognized keys.
 
 ---
 
-## 9. Architecture / Migration Notes
+## 10. Shared Utilities: Confirmation Dialog (src/modules/keyboard/core/confirmDialog.ts)
+
+### `handleConfirmDialogKeyDown(event, options)`
+
+Shared keyboard handler for all confirmation dialogs (delete, discard, reset).
+
+| Key | Behavior |
+|---|---|
+| `Enter` | Confirm (unless `disabled`) |
+| `y` / `Y` | Confirm (unless `disabled`) |
+| `n` / `N` | Cancel |
+| `Escape` | Cancel |
+| other keys | Ignored |
+
+Options:
+- `confirm: () => void` -- called on confirm keys
+- `cancel: () => void` -- called on cancel keys
+- `disabled?: boolean` -- when true, confirm keys are suppressed; cancel still works
+
+The handler ignores events targeting INPUT, TEXTAREA, or contentEditable elements.
+Calls `preventDefault()` and `stopPropagation()` for all handled keys.
+
+---
+
+## 11. Architecture / Migration Notes
 
 ### File layout
 
@@ -328,6 +414,8 @@ src/modules/keyboard/
                                   interpretVimListKey, guard helpers)
     vimList.test.ts
     listNavigation.test.ts
+    confirmDialog.ts            — shared confirmation dialog keyboard handler
+    confirmDialog.test.ts
   hooks/
     useVimListNavigation.ts     — hook wrapping interpretVimListKey
                                    with state management
@@ -356,6 +444,7 @@ SourceControlPanel, GitDiffPane) are migrated to the new import paths.
 | ExplorerSearch | `useVimListNavigation` | Hook manages results-list Vim navigation (j/k/gg/G/Enter). Input-specific behavior (Escape, Ctrl+j, ArrowDown/ArrowUp wrap) remains local because of different wrap/focus semantics. Ctrl+k/Ctrl+l (focus input) handled before the hook. Global window listener forwards only `g` to the hook (so gg from outside the results list routes to search results, not the tree); other keys call `clearPendingG`. |
 | SourceControlPanel | `interpretVimListKey` (core) | Uses `interpretVimListKey` directly (not the hook) because of non-contiguous focusable indices (banners, headers interleaved with entries) and virtualized scrolling via `@tanstack/react-virtual`. Domain actions (`l`, `c`, `r`/`R`, Space) remain local. ArrowDown/ArrowUp/s/S/d/D handled in non-vim fallback section. |
 | GitDiffPane | `interpretVimListKey` (core) | Scrolls a CodeMirror view (not a list). Uses `interpretVimListKey` directly with `scrollDiff` callbacks for j/k/gg/G. |
+| GitHistoryPane | `interpretVimListKey` (core) | Uses `interpretVimListKey` directly with virtualized scrolling. Selection model with `selectedSha` state. Domain actions (`r`, `?`, `o`, `y`/`Y`) remain local. Enter/Space open commit details popover. |
 
 ### Not yet migrated
 
@@ -367,7 +456,7 @@ These still import from the compatibility re-export at `@/modules/explorer/lib/v
 
 ---
 
-## 10. Markdown files
+## 12. Markdown files
 
 ### Preview / rendered mode
 

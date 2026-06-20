@@ -29,6 +29,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
 
 export function ShortcutsSection() {
   const userShortcuts = usePreferencesStore((s) => s.shortcuts);
@@ -138,7 +139,14 @@ export function ShortcutsSection() {
       </div>
 
       <AlertDialog open={resetDialogOpen} onOpenChange={setResetDialogOpen}>
-        <AlertDialogContent>
+        <AlertDialogContent
+          onKeyDown={(e) =>
+            handleConfirmDialogKeyDown(e, {
+              confirm: onResetAll,
+              cancel: () => setResetDialogOpen(false),
+            })
+          }
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>Reset all shortcuts?</AlertDialogTitle>
             <AlertDialogDescription>

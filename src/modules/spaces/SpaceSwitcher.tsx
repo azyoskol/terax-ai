@@ -27,6 +27,7 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import { isEditableTarget } from "@/modules/keyboard/core/targets";
+import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
 import { useVimListNavigation } from "@/modules/keyboard/hooks/useVimListNavigation";
 import { usePreferencesStore } from "@/modules/settings/preferences";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -519,7 +520,18 @@ export function SpaceSwitcher({
       open={deleteConfirmId !== null}
       onOpenChange={(o) => { if (!o) setDeleteConfirmId(null); }}
     >
-      <AlertDialogContent data-space-switcher-delete-dialog>
+      <AlertDialogContent
+        data-space-switcher-delete-dialog
+        onKeyDown={(e) =>
+          handleConfirmDialogKeyDown(e, {
+            confirm: () => {
+              if (deleteConfirmId) onDeleteSpace(deleteConfirmId);
+              setDeleteConfirmId(null);
+            },
+            cancel: () => setDeleteConfirmId(null),
+          })
+        }
+      >
         <AlertDialogHeader>
           <AlertDialogTitle>Delete space?</AlertDialogTitle>
           <AlertDialogDescription>

@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -269,6 +270,7 @@ const FileExplorerContent = memo(
       name: string;
       isDir: boolean;
     } | null>(null);
+    const deletingRef = useRef(false);
 
     const entryPaths = useMemo<string[]>(() => {
       const out: string[] = [];
@@ -926,9 +928,28 @@ const FileExplorerContent = memo(
 
       <AlertDialog
         open={deleteTarget !== null}
-        onOpenChange={(o) => { if (!o) setDeleteTarget(null); }}
+        onOpenChange={(o) => { if (!o) { setDeleteTarget(null); deletingRef.current = false; } }}
       >
-        <AlertDialogContent data-file-explorer-delete-dialog="">
+        <AlertDialogContent
+          data-file-explorer-delete-dialog=""
+          onKeyDown={(e) =>
+            handleConfirmDialogKeyDown(e, {
+              confirm: () => {
+                if (deletingRef.current) return;
+                if (deleteTarget) {
+                  deletingRef.current = true;
+                  const deletedPath = deleteTarget.path;
+                  void tree.deletePath(deletedPath).then(() => {
+                    setDeleteTarget(null);
+                    deletingRef.current = false;
+                    setSelectedPath((prev) => prev === deletedPath ? null : prev);
+                  });
+                }
+              },
+              cancel: () => { setDeleteTarget(null); deletingRef.current = false; },
+            })
+          }
+        >
           <AlertDialogHeader>
             <AlertDialogTitle>
               {deleteTarget?.isDir ? "Delete folder?" : "Delete file?"}
@@ -943,10 +964,13 @@ const FileExplorerContent = memo(
             <AlertDialogCancel onClick={() => setDeleteTarget(null)}>Cancel</AlertDialogCancel>
             <AlertDialogAction
               onClick={() => {
+                if (deletingRef.current) return;
                 if (deleteTarget) {
+                  deletingRef.current = true;
                   const deletedPath = deleteTarget.path;
                   void tree.deletePath(deletedPath).then(() => {
                     setDeleteTarget(null);
+                    deletingRef.current = false;
                     setSelectedPath((prev) => prev === deletedPath ? null : prev);
                   });
                 }
