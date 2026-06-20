@@ -17,12 +17,11 @@ import {
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
-  interpretVimListKey,
   isEditableTarget,
-  isPlainVimKey,
-} from "@/modules/explorer/lib/vimKeys";
+} from "@/modules/keyboard/core/vimList";
+import { useVimListNavigation } from "@/modules/keyboard/hooks/useVimListNavigation";
 import { usePreferencesStore } from "@/modules/settings/preferences";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { InlineRename } from "./components/InlineRename";
 import { accentFor } from "./lib/spaceColor";
@@ -104,7 +103,6 @@ export function SpaceSwitcher({
     (s) => s.vimNavigationEnabled,
   );
   const [vimNavIndex, setVimNavIndex] = useState(0);
-  const vimPendingGRef = useRef<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   const drag = useRef<DragState | null>(null);
@@ -157,93 +155,53 @@ export function SpaceSwitcher({
       return next;
     });
 
-  const handleActivateItem = useCallback(() => {
-    const item = items[vimNavIndex];
-    if (!item) return;
-    if (item.kind === "space") {
-      setActive(item.spaceId);
-      onOpenChange(false);
-    } else if (item.kind === "tab") {
-      onJumpTab(item.tabId);
-    }
-  }, [items, vimNavIndex, setActive, onOpenChange, onJumpTab]);
+  const { onKeyDown, clearPendingG } = useVimListNavigation({
+    enabled: vimNavigationEnabled,
+    itemCount: items.length,
+    selectedIndex: vimNavIndex,
+    setSelectedIndex: setVimNavIndex,
+    onActivate: (i) => {
+      const item = items[i];
+      if (!item) return;
+      if (item.kind === "space") {
+        setActive(item.spaceId);
+        onOpenChange(false);
+      } else if (item.kind === "tab") {
+        onJumpTab(item.tabId);
+      }
+    },
+    onEscape: () => onOpenChange(false),
+    isEventTargetIgnored: (target) => isEditableTarget(target),
+    alwaysHandleActivateEscape: true,
+    onUnhandledPlainKey: (e, selectedIndex) => {
+      if (e.key === "h") {
+        const item = items[selectedIndex];
+        if (item?.kind === "space" && expanded.has(item.spaceId)) {
+          toggleExpand(item.spaceId);
+          return true;
+        }
+        return false;
+      }
+      if (e.key === "l") {
+        const item = items[selectedIndex];
+        if (item?.kind === "space" && !expanded.has(item.spaceId)) {
+          toggleExpand(item.spaceId);
+          return true;
+        }
+        return false;
+      }
+      return false;
+    },
+  });
 
   useEffect(() => {
     if (!open || items.length === 0) return;
-    const onKey = (e: KeyboardEvent) => {
-      const target = (e.target as HTMLElement | null) ?? document.activeElement;
-      if (isEditableTarget(target)) return;
-
-      if (e.ctrlKey || e.altKey || e.metaKey) return;
-
-      const action = interpretVimListKey(e, vimPendingGRef);
-
-      if (action.kind === "activate") {
-        e.preventDefault();
-        handleActivateItem();
-        return;
-      }
-
-      if (action.kind === "escape") {
-        e.preventDefault();
-        onOpenChange(false);
-        return;
-      }
-
-      if (!vimNavigationEnabled) return;
-
-      const len = items.length;
-      if (len === 0) return;
-
-      if (action.kind === "next") {
-        e.preventDefault();
-        setVimNavIndex((prev) => Math.min(prev + 1, len - 1));
-        return;
-      }
-      if (action.kind === "prev") {
-        e.preventDefault();
-        setVimNavIndex((prev) => Math.max(prev - 1, 0));
-        return;
-      }
-      if (action.kind === "first") {
-        e.preventDefault();
-        setVimNavIndex(0);
-        return;
-      }
-      if (action.kind === "last") {
-        e.preventDefault();
-        setVimNavIndex(len - 1);
-        return;
-      }
-
-      if (action.kind === "none" && isPlainVimKey(e)) {
-        if (e.key === "h") {
-          const item = items[vimNavIndex];
-          if (item?.kind === "space" && expanded.has(item.spaceId)) {
-            e.preventDefault();
-            toggleExpand(item.spaceId);
-          }
-          return;
-        }
-        if (e.key === "l") {
-          const item = items[vimNavIndex];
-          if (item?.kind === "space" && !expanded.has(item.spaceId)) {
-            e.preventDefault();
-            toggleExpand(item.spaceId);
-          }
-          return;
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKeyDown);
     return () => {
-      window.removeEventListener("keydown", onKey);
-      if (vimPendingGRef.current) {
-        window.clearTimeout(vimPendingGRef.current);
-        vimPendingGRef.current = null;
-      }
+      window.removeEventListener("keydown", onKeyDown);
+      clearPendingG();
     };
-  }, [open, vimNavigationEnabled, items, vimNavIndex, setActive, onOpenChange, onJumpTab, expanded, toggleExpand, handleActivateItem]);
+  }, [open, items.length, onKeyDown, clearPendingG]);
 
   useEffect(() => {
     if (open) setVimNavIndex(0);

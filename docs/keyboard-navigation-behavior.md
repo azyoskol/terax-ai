@@ -215,7 +215,7 @@ Vim and non-vim key handling is skipped when the event target is a
 
 ---
 
-## 8. Shared Utilities (src/modules/explorer/lib/vimKeys.ts)
+## 8. Shared Utilities (src/modules/keyboard/core/vimList.ts)
 
 ### `interpretVimListKey(e, pendingGRef)`
 
@@ -252,3 +252,51 @@ Returns `none` for unrecognized keys.
 - `isCapitalGKey(e)` — true for a plain unmodified `G`
 - `isEditableTarget(target)` — true for INPUT, TEXTAREA, contentEditable
 - `isTerminalTarget(target)` — true if target is inside `.xterm`
+
+---
+
+## 9. Architecture / Migration Notes
+
+### File layout
+
+```
+src/modules/keyboard/
+  core/
+    vimList.ts                  — shared utilities (normalizeVimKey,
+                                  interpretVimListKey, guard helpers)
+    vimList.test.ts
+    listNavigation.test.ts
+  hooks/
+    useVimListNavigation.ts     — hook wrapping interpretVimListKey
+                                  with state management
+    useVimListNavigation.test.ts
+```
+
+### Compatibility re-export
+
+`src/modules/explorer/lib/vimKeys.ts` is a temporary compatibility re-export:
+
+```ts
+export * from "@/modules/keyboard/core/vimList";
+```
+
+It will be removed once all remaining consumers (FileExplorer, ExplorerSearch,
+SourceControlPanel, GitDiffPane) are migrated to the new import paths.
+
+### Migrated consumers
+
+| Component | Uses | Notes |
+|---|---|---|
+| BufferTabPicker | `useVimListNavigation` | Hook manages j/k/gg/G/Enter/Escape + editable target guard + pending-g cleanup |
+| SpaceSwitcher | `useVimListNavigation` | Hook + `onUnhandledPlainKey` for h/l expand/collapse. The early modifier guard (`if (e.ctrlKey ...) return`) before `interpretVimListKey` was removed — the function handles modifiers internally. |
+
+### Not yet migrated
+
+- FileExplorer
+- ExplorerSearch
+- SourceControlPanel
+- GitDiffPane
+- Terminal prefix mode in App.tsx
+- Workspace focus shortcuts (`workspace.focusExplorer`, `workspace.focusEditor`)
+
+These still import from the compatibility re-export at `@/modules/explorer/lib/vimKeys`.

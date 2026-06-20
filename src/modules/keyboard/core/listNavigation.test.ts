@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { interpretVimListKey, type VimListAction } from "./vimKeys";
+import { interpretVimListKey, type VimListAction } from "./vimList";
 
 /**
  * Pure helper that mirrors what BufferTabPicker / SpaceSwitcher do with a

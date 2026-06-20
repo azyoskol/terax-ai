@@ -1,8 +1,6 @@
 import { cn } from "@/lib/utils";
-import {
-  interpretVimListKey,
-  isEditableTarget,
-} from "@/modules/explorer/lib/vimKeys";
+import { isEditableTarget } from "@/modules/keyboard/core/vimList";
+import { useVimListNavigation } from "@/modules/keyboard/hooks/useVimListNavigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { labelFor } from "./lib/tabLabel";
 import type { Tab } from "./lib/useTabs";
@@ -37,7 +35,6 @@ export function BufferTabPicker({
   onClose,
 }: Props) {
   const [index, setIndex] = useState(0);
-  const pendingGRef = useRef<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -47,65 +44,27 @@ export function BufferTabPicker({
     }
   }, [open, tabs, activeId]);
 
+  const { onKeyDown, clearPendingG } = useVimListNavigation({
+    enabled: true,
+    itemCount: tabs.length,
+    selectedIndex: index,
+    setSelectedIndex: setIndex,
+    onActivate: (i) => {
+      const t = tabs[i];
+      if (t) onActivate(t.id);
+    },
+    onEscape: onClose,
+    isEventTargetIgnored: (target) => isEditableTarget(target),
+  });
+
   useEffect(() => {
     if (!open || tabs.length === 0) return;
-    const onKey = (e: KeyboardEvent) => {
-      const target =
-        (e.target as HTMLElement | null) ?? document.activeElement;
-      if (isEditableTarget(target)) return;
-
-      const action = interpretVimListKey(e, pendingGRef);
-      const len = tabs.length;
-
-      switch (action.kind) {
-        case "activate": {
-          e.preventDefault();
-          e.stopPropagation();
-          const t = tabs[index];
-          if (t) onActivate(t.id);
-          return;
-        }
-        case "escape": {
-          e.preventDefault();
-          e.stopPropagation();
-          onClose();
-          return;
-        }
-        case "next": {
-          e.preventDefault();
-          e.stopPropagation();
-          setIndex((prev) => Math.min(prev + 1, len - 1));
-          return;
-        }
-        case "prev": {
-          e.preventDefault();
-          e.stopPropagation();
-          setIndex((prev) => Math.max(prev - 1, 0));
-          return;
-        }
-        case "first": {
-          e.preventDefault();
-          e.stopPropagation();
-          setIndex(0);
-          return;
-        }
-        case "last": {
-          e.preventDefault();
-          e.stopPropagation();
-          setIndex(len - 1);
-          return;
-        }
-      }
-    };
-    window.addEventListener("keydown", onKey, { capture: true });
+    window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => {
-      window.removeEventListener("keydown", onKey, { capture: true });
-      if (pendingGRef.current) {
-        window.clearTimeout(pendingGRef.current);
-        pendingGRef.current = null;
-      }
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+      clearPendingG();
     };
-  }, [open, tabs, index, onActivate, onClose]);
+  }, [open, tabs.length, onKeyDown, clearPendingG]);
 
   useEffect(() => {
     if (!open || tabs.length === 0) return;

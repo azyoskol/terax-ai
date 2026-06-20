@@ -5,7 +5,7 @@ import {
   isPendingGKey,
   isCapitalGKey,
   interpretVimListKey,
-} from "./vimKeys";
+} from "./vimList";
 
 describe("normalizeVimKey", () => {
   it("maps h to ArrowLeft", () => {
