@@ -65,6 +65,8 @@ type Props = {
   gitStatus?: GitStatusSnapshot | null;
 };
 
+type PropsContent = Props & { rootPath: string };
+
 type Row =
   | {
       kind: "entry";
@@ -183,8 +185,8 @@ function buildRows(
   return { rows, entryIndexByPath };
 }
 
-export const FileExplorer = memo(
-  forwardRef<FileExplorerHandle, Props>(function FileExplorer(
+const FileExplorerContent = memo(
+  forwardRef<FileExplorerHandle, PropsContent>(function FileExplorerContent(
     {
       rootPath,
       activeFilePath,
@@ -215,7 +217,6 @@ export const FileExplorer = memo(
     const pendingVimCreateRef = useRef(false);
 
     const { rows, entryIndexByPath } = useMemo(() => {
-      if (!rootPath) return { rows: [] as Row[], entryIndexByPath: new Map<string, number>() };
       return buildRows(rootPath, tree, lookupGitStatus);
       // `tree` is intentionally omitted: its identity changes every render, but
       // the listed fields are the only inputs buildRows actually reads.
@@ -267,7 +268,7 @@ export const FileExplorer = memo(
       [entryIndexByPath, rows],
     );
     const dnd = useExplorerDnd({
-      rootPath: rootPath ?? "",
+      rootPath,
       isDir: isDirAt,
       onMove: tree.movePath,
     });
@@ -381,22 +382,6 @@ export const FileExplorer = memo(
       },
     });
 
-    if (!rootPath) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
-          <HugeiconsIcon
-            icon={Folder01Icon}
-            size={24}
-            strokeWidth={1.5}
-            className="text-muted-foreground"
-          />
-          <div className="text-xs text-muted-foreground">
-            No current directory
-          </div>
-        </div>
-      );
-    }
-
     const root = tree.nodes[rootPath];
     const pendingAtRoot =
       tree.pendingCreate?.parentPath === rootPath ? tree.pendingCreate : null;
@@ -415,7 +400,7 @@ export const FileExplorer = memo(
       expand: (id) => tree.toggle(id),
       collapse: (id) => tree.toggle(id),
       parentOf,
-      rootPath: rootPath ?? "",
+      rootPath: rootPath,
       onActivate: (id) => {
         const idx = entryIndexByPath.get(id);
         if (idx === undefined) return;
@@ -437,7 +422,7 @@ export const FileExplorer = memo(
           const idx = entryIndexByPath.get(selectedPath);
           const row = idx !== undefined ? rows[idx] : undefined;
           if (row?.kind === "entry" && row.isDir) return row.path;
-          return parentOf(selectedPath, rootPath ?? "");
+          return parentOf(selectedPath, rootPath);
         })();
         pendingVimCreateRef.current = true;
         tree.beginCreate(targetDir, "file");
@@ -448,12 +433,12 @@ export const FileExplorer = memo(
           const idx = entryIndexByPath.get(selectedPath);
           const row = idx !== undefined ? rows[idx] : undefined;
           if (row?.kind === "entry" && row.isDir) return row.path;
-          return parentOf(selectedPath, rootPath ?? "");
+          return parentOf(selectedPath, rootPath);
         })();
         pendingVimCreateRef.current = true;
         tree.beginCreate(targetDir, "dir");
       },
-      onRefresh: () => tree.refresh(rootPath ?? ""),
+      onRefresh: () => tree.refresh(rootPath),
       isEventTargetIgnored: (target) => {
         if (!target || !(target instanceof HTMLElement)) return false;
         return (
@@ -858,4 +843,25 @@ export const FileExplorer = memo(
       </div>
     );
   }),
+);
+
+export const FileExplorer = forwardRef<FileExplorerHandle, Props>(
+  function FileExplorer(props, ref) {
+    if (!props.rootPath) {
+      return (
+        <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
+          <HugeiconsIcon
+            icon={Folder01Icon}
+            size={24}
+            strokeWidth={1.5}
+            className="text-muted-foreground"
+          />
+          <div className="text-xs text-muted-foreground">
+            No current directory
+          </div>
+        </div>
+      );
+    }
+    return <FileExplorerContent {...props} rootPath={props.rootPath} ref={ref} />;
+  },
 );

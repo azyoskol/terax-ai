@@ -127,11 +127,27 @@ describe("useVimTreeNavigation", () => {
       expect(collapse).toHaveBeenCalledWith("/root/b");
     });
 
-    it("moves to parent when not expanded", () => {
+    it("moves to parent when parent is in itemIds", () => {
+      selectedId = "/root/b/c";
+      const hook = renderHook(createOptions());
+      hook.onKeyDown(makeEvent("h"));
+      expect(selectedId).toBe("/root/b");
+    });
+
+    it("does not move to parent when parent is not in itemIds", () => {
       selectedId = "/root/d";
       const hook = renderHook(createOptions());
       hook.onKeyDown(makeEvent("h"));
-      expect(selectedId).toBe("/root");
+      expect(selectedId).toBe("/root/d");
+      expect(setSelectedId).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when no item is selected", () => {
+      selectedId = null;
+      const hook = renderHook(createOptions({ selectedId: null }));
+      hook.onKeyDown(makeEvent("h"));
+      expect(collapse).not.toHaveBeenCalled();
+      expect(setSelectedId).not.toHaveBeenCalled();
     });
   });
 
@@ -176,11 +192,122 @@ describe("useVimTreeNavigation", () => {
   });
 
   describe("empty list", () => {
+    let onSearch: (() => void) & ReturnType<typeof vi.fn>;
+    let onCreateFile: (() => void) & ReturnType<typeof vi.fn>;
+    let onCreateFolder: (() => void) & ReturnType<typeof vi.fn>;
+    let onRefresh: (() => void) & ReturnType<typeof vi.fn>;
+
+    beforeEach(() => {
+      onSearch = vi.fn() as (() => void) & ReturnType<typeof vi.fn>;
+      onCreateFile = vi.fn() as (() => void) & ReturnType<typeof vi.fn>;
+      onCreateFolder = vi.fn() as (() => void) & ReturnType<typeof vi.fn>;
+      onRefresh = vi.fn() as (() => void) & ReturnType<typeof vi.fn>;
+    });
+
     it("does not crash when itemIds is empty", () => {
       const hook = renderHook(
         createOptions({ itemIds: [], selectedId: null }),
       );
       expect(() => hook.onKeyDown(makeEvent("j"))).not.toThrow();
+    });
+
+    it("/ calls onSearch even when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null, onSearch }),
+      );
+      hook.onKeyDown(makeEvent("/"));
+      expect(onSearch).toHaveBeenCalled();
+    });
+
+    it("a calls onCreateFile even when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null, onCreateFile }),
+      );
+      hook.onKeyDown(makeEvent("a"));
+      expect(onCreateFile).toHaveBeenCalled();
+    });
+
+    it("A calls onCreateFolder even when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null, onCreateFolder }),
+      );
+      hook.onKeyDown(makeEvent("A"));
+      expect(onCreateFolder).toHaveBeenCalled();
+    });
+
+    it("R calls onRefresh even when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null, onRefresh }),
+      );
+      hook.onKeyDown(makeEvent("R"));
+      expect(onRefresh).toHaveBeenCalled();
+    });
+
+    it("j does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => hook.onKeyDown(makeEvent("j"))).not.toThrow();
+    });
+
+    it("k does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => hook.onKeyDown(makeEvent("k"))).not.toThrow();
+    });
+
+    it("gg does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => {
+        hook.onKeyDown(makeEvent("g"));
+        hook.onKeyDown(makeEvent("g"));
+      }).not.toThrow();
+    });
+
+    it("G does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => hook.onKeyDown(makeEvent("G"))).not.toThrow();
+    });
+
+    it("h does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => hook.onKeyDown(makeEvent("h"))).not.toThrow();
+    });
+
+    it("l does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => hook.onKeyDown(makeEvent("l"))).not.toThrow();
+    });
+
+    it("Enter does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => hook.onKeyDown(makeEvent("Enter"))).not.toThrow();
+    });
+
+    it("ArrowDown does not crash when itemIds is empty", () => {
+      const hook = renderHook(
+        createOptions({ itemIds: [], selectedId: null }),
+      );
+      expect(() => hook.onKeyDown(makeEvent("ArrowDown"))).not.toThrow();
+    });
+
+    it("disabled: / does not call onSearch when enabled is false", () => {
+      const hook = renderHook(
+        createOptions({ enabled: false, itemIds: [], selectedId: null, onSearch }),
+      );
+      hook.onKeyDown(makeEvent("/"));
+      expect(onSearch).not.toHaveBeenCalled();
     });
   });
 

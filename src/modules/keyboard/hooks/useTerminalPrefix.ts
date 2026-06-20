@@ -1,4 +1,8 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  focusSourceControlPanel,
+  isTerminalTarget,
+} from "@/modules/keyboard/core/targets";
 
 export type TerminalPrefixActions = {
   focusDirectionalPaneInTab: (
@@ -34,9 +38,7 @@ export function useTerminalPrefix(options: TerminalPrefixOptions): {
     const onKey = (e: KeyboardEvent) => {
       const target =
         (e.target as HTMLElement | null) ?? document.activeElement;
-      const inTerminal = !!(
-        target as HTMLElement | null
-      )?.closest?.(".xterm");
+      const inTerminal = isTerminalTarget(target);
 
       if (
         e.ctrlKey &&
@@ -81,12 +83,7 @@ export function useTerminalPrefix(options: TerminalPrefixOptions): {
             break;
           case "g":
             actionsRef.current.cycleSidebarView("source-control");
-            requestAnimationFrame(() => {
-              const sc = document.querySelector<HTMLElement>(
-                "[data-source-control]",
-              );
-              sc?.focus();
-            });
+            focusSourceControlPanel();
             break;
           case "t":
             actionsRef.current.stepSwitcher(1);

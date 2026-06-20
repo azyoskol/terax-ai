@@ -2,9 +2,12 @@ import { MarkdownCode } from "@/components/ai-elements/markdown-code";
 import { cn } from "@/lib/utils";
 import { currentWorkspaceEnv } from "@/modules/workspace";
 import { invoke } from "@tauri-apps/api/core";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Streamdown } from "streamdown";
 import { MarkdownViewToggle } from "./MarkdownViewToggle";
+import { useVimScrollNavigation } from "@/modules/keyboard/hooks/useVimScrollNavigation";
+import { usePreferencesStore } from "@/modules/settings/preferences";
+import { isEditableTarget } from "@/modules/keyboard/core/targets";
 
 type ReadResult =
   | { kind: "text"; content: string; size: number }
@@ -28,6 +31,14 @@ const components = { code: MarkdownCode };
 
 export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
   const [status, setStatus] = useState<Status>({ kind: "loading" });
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const vimNavigationEnabled = usePreferencesStore((s) => s.vimNavigationEnabled);
+
+  const { onKeyDown } = useVimScrollNavigation({
+    enabled: vimNavigationEnabled,
+    scrollRef,
+    step: 60,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -54,6 +65,24 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
     };
   }, [path]);
 
+  useEffect(() => {
+    if (visible) {
+      requestAnimationFrame(() => scrollRef.current?.focus());
+    }
+  }, [visible]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    onKeyDown(e.nativeEvent);
+
+    if (e.key === "e" || e.key === "i" || e.key === "Enter") {
+      if (!isEditableTarget(e.target)) {
+        e.preventDefault();
+        e.stopPropagation();
+        onSetView("raw");
+      }
+    }
+  };
+
   return (
     <div
       className={cn(
@@ -62,7 +91,13 @@ export function MarkdownPreviewPane({ path, visible, onSetView }: Props) {
       )}
     >
       <MarkdownViewToggle mode="rendered" onChange={onSetView} />
-      <div className="flex-1 overflow-auto">
+      <div
+        ref={scrollRef}
+        tabIndex={0}
+        className="flex-1 overflow-auto outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
+        data-markdown-preview
+        onKeyDown={handleKeyDown}
+      >
         <div className="px-8 py-6">
           {status.kind === "loading" && (
             <p className="text-[12px] text-muted-foreground">Loading…</p>

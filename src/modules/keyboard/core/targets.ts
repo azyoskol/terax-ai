@@ -2,7 +2,12 @@
 export function isEditableTarget(
   target: EventTarget | HTMLElement | null,
 ): boolean {
-  if (!target || !(target instanceof HTMLElement)) return false;
+  if (
+    !target ||
+    typeof HTMLElement === "undefined" ||
+    !(target instanceof HTMLElement)
+  )
+    return false;
   return (
     target.tagName === "INPUT" ||
     target.tagName === "TEXTAREA" ||
@@ -14,7 +19,12 @@ export function isEditableTarget(
 export function isTerminalTarget(
   target: EventTarget | HTMLElement | null,
 ): boolean {
-  if (!target || !(target instanceof HTMLElement)) return false;
+  if (
+    !target ||
+    typeof HTMLElement === "undefined" ||
+    !(target instanceof HTMLElement)
+  )
+    return false;
   return !!target.closest?.(".xterm");
 }
 
@@ -48,4 +58,21 @@ export function isInSourceControl(
   target: EventTarget | HTMLElement | null,
 ): boolean {
   return !!(target as HTMLElement | null)?.closest?.("[data-source-control]");
+}
+
+/**
+ * Focus the source control panel after opening it from a keyboard shortcut.
+ * Retries across several animation frames in case the panel isn't mounted yet.
+ */
+export function focusSourceControlPanel(): void {
+  let attempts = 0;
+  const tryFocus = () => {
+    const el = document.querySelector<HTMLElement>("[data-source-control]");
+    if (el) {
+      el.focus();
+      return;
+    }
+    if (++attempts < 10) requestAnimationFrame(tryFocus);
+  };
+  requestAnimationFrame(tryFocus);
 }

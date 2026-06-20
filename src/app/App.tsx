@@ -50,6 +50,7 @@ import {
 } from "@/modules/shortcuts";
 import { useTerminalPrefix } from "@/modules/keyboard/hooks/useTerminalPrefix";
 import {
+  focusSourceControlPanel,
   isEditableTarget,
   isInExplorer,
   isInExplorerSearch,
@@ -713,7 +714,10 @@ export default function App() {
       "pane.focusRight": () => focusDirectionalPaneInTab(activeId, "right"),
       "pane.focusUp": () => focusDirectionalPaneInTab(activeId, "up"),
       "pane.focusDown": () => focusDirectionalPaneInTab(activeId, "down"),
-      "pane.source": toggleSourceControl,
+      "pane.source": () => {
+        toggleSourceControl();
+        focusSourceControlPanel();
+      },
       "terminal.clear": () => {
         clearFocusedTerminal();
       },

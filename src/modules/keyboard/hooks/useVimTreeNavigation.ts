@@ -74,15 +74,6 @@ export function useVimTreeNavigation(options: VimTreeNavigationOptions) {
   const onKeyDown = useCallback(
     (e: KeyboardEvent | React.KeyboardEvent) => {
       if (isEventTargetIgnored?.(getTarget(e))) return;
-      if (itemIds.length === 0) return;
-
-      const currentIdx = selectedId ? itemIds.indexOf(selectedId) : -1;
-
-      const move = (next: number) => {
-        const clamped = Math.max(0, Math.min(itemIds.length - 1, next));
-        setSelectedId(itemIds[clamped]);
-        scrollToId?.(itemIds[clamped]);
-      };
 
       if (enabled) {
         if (e.key === "/") {
@@ -110,7 +101,19 @@ export function useVimTreeNavigation(options: VimTreeNavigationOptions) {
           onRefresh?.();
           return;
         }
+      }
 
+      if (itemIds.length === 0) return;
+
+      const currentIdx = selectedId ? itemIds.indexOf(selectedId) : -1;
+
+      const move = (next: number) => {
+        const clamped = Math.max(0, Math.min(itemIds.length - 1, next));
+        setSelectedId(itemIds[clamped]);
+        scrollToId?.(itemIds[clamped]);
+      };
+
+      if (enabled) {
         const action = interpretVimListKey(nativeEvent(e), pendingGRef);
         switch (action.kind) {
           case "next":
@@ -185,7 +188,7 @@ export function useVimTreeNavigation(options: VimTreeNavigationOptions) {
             collapse(selectedId);
           } else {
             const parent = parentOf(selectedId, rootPath);
-            if (parent && parent !== selectedId) {
+            if (parent && parent !== selectedId && itemIds.includes(parent)) {
               e.preventDefault();
               e.stopPropagation();
               setSelectedId(parent);

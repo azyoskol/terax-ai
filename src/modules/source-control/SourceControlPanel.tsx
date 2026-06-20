@@ -398,7 +398,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   }, []);
 
   const handlePanelKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
+    (event: KeyboardEvent<HTMLElement>) => {
       const target = event.target as HTMLElement | null;
       if (
         target &&
@@ -415,8 +415,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         return;
       }
 
-      if (vimNavigationEnabled && isPlainVimKey(event)) {
+      if (vimNavigationEnabled) {
         const action = interpretVimListKey(event.nativeEvent, pendingGRef);
+        if (!isPlainVimKey(event)) {
+          return;
+        }
         switch (action.kind) {
           case "next":
             event.preventDefault();
@@ -465,6 +468,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           }
           return;
         }
+        return;
       }
 
       switch (event.key) {
@@ -532,6 +536,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
         className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style] outline-none"
         data-source-control=""
         tabIndex={0}
+        onKeyDown={handlePanelKeyDown}
       >
         <header className="flex shrink-0 items-center justify-between gap-2 border-b border-border/50 px-3 pb-2.5 pt-3">
           <div className="flex min-w-0 items-center gap-1.5">
@@ -836,13 +841,12 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             ) : (
               <div
                 ref={containerRef}
-                tabIndex={0}
+                tabIndex={-1}
                 role="listbox"
                 aria-label="Changed files"
                 aria-activedescendant={
                   focusedRowKey ? `scm-row-${focusedRowKey}` : undefined
                 }
-                onKeyDown={handlePanelKeyDown}
                 data-source-control-changes=""
                 className="relative min-h-0 flex-1 outline-none focus-visible:ring-1 focus-visible:ring-primary/30"
               >
