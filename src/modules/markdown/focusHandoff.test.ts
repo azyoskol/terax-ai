@@ -2,9 +2,19 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 type EditorPaneHandle = { focus: () => void };
 
+function retryAnimationFrames(fn: () => boolean, maxAttempts = 30) {
+  let attempts = 0;
+  const tick = () => {
+    if (fn()) return;
+    if (++attempts < maxAttempts) requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
+}
+
 function createFocusHelper(
   editorRefs: Map<number, EditorPaneHandle>,
   querySelectorFn: (selector: string) => HTMLElement | null = () => null,
+  activeElementRef: { current: unknown } = { current: null },
 ) {
   return function setMarkdownViewAndFocus(
     id: number,
@@ -12,32 +22,64 @@ function createFocusHelper(
     setMarkdownView: (id: number, mode: "rendered" | "raw") => void,
   ) {
     setMarkdownView(id, mode);
+
     if (mode === "raw") {
-      let attempts = 0;
-      const tryFocus = () => {
+      retryAnimationFrames(() => {
         const handle = editorRefs.get(id);
-        if (handle) {
-          handle.focus();
-          return;
+        handle?.focus();
+        const active = activeElementRef.current;
+        if (
+          active &&
+          typeof active === "object" &&
+          "closest" in active
+        ) {
+          const node = active as { closest: (s: string) => unknown };
+          if (node.closest(".cm-editor") || node.closest("[data-editor]")) {
+            return true;
+          }
         }
-        if (++attempts < 10) requestAnimationFrame(tryFocus);
-      };
-      requestAnimationFrame(tryFocus);
+        return false;
+      });
     } else {
-      let attempts = 0;
-      const tryFocus = () => {
+      retryAnimationFrames(() => {
         const el = querySelectorFn(
           `[data-markdown-preview][data-tab-id="${id}"]`,
         );
-        if (el) {
-          el.focus();
-          return;
-        }
-        if (++attempts < 10) requestAnimationFrame(tryFocus);
-      };
-      requestAnimationFrame(tryFocus);
+        if (!el) return false;
+        el.focus();
+        return activeElementRef.current === el;
+      });
     }
   };
+}
+
+function makeCmEditor(activeElementRef: { current: unknown }) {
+  const el = {
+    closest: (sel: string) => (sel === ".cm-editor" ? el : null),
+    focus: vi.fn(() => {
+      activeElementRef.current = el;
+    }),
+  };
+  return el;
+}
+
+function makeDataEditor(activeElementRef: { current: unknown }) {
+  const el = {
+    closest: (sel: string) => (sel === "[data-editor]" ? el : null),
+    focus: vi.fn(() => {
+      activeElementRef.current = el;
+    }),
+  };
+  return el;
+}
+
+function makePreviewEl(activeElementRef: { current: unknown }) {
+  const el = {
+    focus: vi.fn(() => {
+      activeElementRef.current = el;
+    }),
+  };
+  return el as unknown as HTMLElement;
 }
 
 describe("focusMarkdownSurfaceAfterModeSwitch", () => {
@@ -57,79 +99,122 @@ describe("focusMarkdownSurfaceAfterModeSwitch", () => {
     globalThis.requestAnimationFrame = originalRAF;
   });
 
-  it("preview -> raw calls setMarkdownView and focuses editor handle when available", () => {
+  it("raw mode focuses editor and stops when .cm-editor is found", () => {
     const setMarkdownView = vi.fn();
-    const focus = vi.fn();
+    const activeElementRef: { current: unknown } = { current: null };
+    const cmEditor = makeCmEditor(activeElementRef);
     const editorRefs = new Map<number, EditorPaneHandle>();
-    const helper = createFocusHelper(editorRefs);
 
+    const helper = createFocusHelper(editorRefs, () => null, activeElementRef);
     helper(1, "raw", setMarkdownView);
-
     expect(setMarkdownView).toHaveBeenCalledWith(1, "raw");
 
-    editorRefs.set(1, { focus });
+    editorRefs.set(1, { focus: cmEditor.focus as unknown as () => void });
     rafCallbacks.shift()!(0);
-
-    expect(focus).toHaveBeenCalled();
+    expect(activeElementRef.current).toBe(cmEditor);
   });
 
-  it("raw -> preview focuses [data-markdown-preview] element", () => {
+  it("raw mode does not stop when handle exists but focus did not land", () => {
     const setMarkdownView = vi.fn();
-    const focusEl = { focus: vi.fn() } as unknown as HTMLElement;
+    const activeElementRef: { current: unknown } = { current: null };
+    const editorRefs = new Map<number, EditorPaneHandle>();
+
+    const helper = createFocusHelper(editorRefs, () => null, activeElementRef);
+    helper(1, "raw", setMarkdownView);
+
+    const cmEditor = makeCmEditor(activeElementRef);
+
+    editorRefs.set(1, { focus: () => {} });
+    rafCallbacks.shift()!(0);
+    expect(activeElementRef.current).toBeNull();
+
+    editorRefs.set(1, { focus: cmEditor.focus as unknown as () => void });
+    rafCallbacks.shift()!(0);
+    expect(activeElementRef.current).toBe(cmEditor);
+  });
+
+  it("raw mode retries until focus lands in .cm-editor on a later frame", () => {
+    const setMarkdownView = vi.fn();
+    const activeElementRef: { current: unknown } = { current: null };
+    const editorRefs = new Map<number, EditorPaneHandle>();
+
+    const helper = createFocusHelper(editorRefs, () => null, activeElementRef);
+    helper(1, "raw", setMarkdownView);
+
+    const cmEditor = makeCmEditor(activeElementRef);
+
+    editorRefs.set(1, { focus: () => {} });
+    rafCallbacks.shift()!(0);
+    expect(activeElementRef.current).toBeNull();
+
+    editorRefs.set(1, { focus: cmEditor.focus as unknown as () => void });
+    rafCallbacks.shift()!(0);
+    expect(activeElementRef.current).toBe(cmEditor);
+  });
+
+  it("raw mode verifies focus via [data-editor] attribute", () => {
+    const setMarkdownView = vi.fn();
+    const activeElementRef: { current: unknown } = { current: null };
+    const editorDiv = makeDataEditor(activeElementRef);
+    const editorRefs = new Map<number, EditorPaneHandle>();
+
+    const helper = createFocusHelper(editorRefs, () => null, activeElementRef);
+    helper(1, "raw", setMarkdownView);
+
+    editorRefs.set(1, { focus: editorDiv.focus as unknown as () => void });
+    rafCallbacks.shift()!(0);
+    expect(activeElementRef.current).toBe(editorDiv);
+  });
+
+  it("rendered mode focuses [data-markdown-preview] element", () => {
+    const setMarkdownView = vi.fn();
+    const activeElementRef: { current: unknown } = { current: null };
+
+    const focusEl = makePreviewEl(activeElementRef);
     const querySelectorFn = vi.fn().mockReturnValue(focusEl);
 
     const editorRefs = new Map<number, EditorPaneHandle>();
-    const helper = createFocusHelper(editorRefs, querySelectorFn);
+    const helper = createFocusHelper(
+      editorRefs,
+      querySelectorFn,
+      activeElementRef,
+    );
 
     helper(1, "rendered", setMarkdownView);
-
     expect(setMarkdownView).toHaveBeenCalledWith(1, "rendered");
-    rafCallbacks.shift()!(0);
 
-    expect(focusEl.focus).toHaveBeenCalled();
+    rafCallbacks.shift()!(0);
+    expect(activeElementRef.current).toBe(focusEl);
     expect(querySelectorFn).toHaveBeenCalledWith(
       '[data-markdown-preview][data-tab-id="1"]',
     );
   });
 
-  it("preview -> raw retries when editor handle not yet available", () => {
+  it("rendered mode retries until preview exists and is focused", () => {
     const setMarkdownView = vi.fn();
-    const focus = vi.fn();
-    const editorRefs = new Map<number, EditorPaneHandle>();
-    const helper = createFocusHelper(editorRefs);
+    const activeElementRef: { current: unknown } = { current: null };
 
-    helper(1, "raw", setMarkdownView);
-
-    expect(setMarkdownView).toHaveBeenCalledWith(1, "raw");
-
-    rafCallbacks.shift()!(0);
-    expect(focus).not.toHaveBeenCalled();
-
-    editorRefs.set(1, { focus });
-    rafCallbacks.shift()!(0);
-
-    expect(focus).toHaveBeenCalled();
-  });
-
-  it("raw -> preview retries when DOM element not yet available", () => {
-    const setMarkdownView = vi.fn();
-    const focusEl = { focus: vi.fn() } as unknown as HTMLElement;
+    const focusEl = makePreviewEl(activeElementRef);
     const querySelectorFn = vi
       .fn()
       .mockReturnValueOnce(null)
       .mockReturnValueOnce(focusEl);
 
     const editorRefs = new Map<number, EditorPaneHandle>();
-    const helper = createFocusHelper(editorRefs, querySelectorFn);
+    const helper = createFocusHelper(
+      editorRefs,
+      querySelectorFn,
+      activeElementRef,
+    );
 
     helper(1, "rendered", setMarkdownView);
 
     rafCallbacks.shift()!(0);
+    expect(activeElementRef.current).toBeNull();
     expect(querySelectorFn).toHaveBeenCalledTimes(1);
 
     rafCallbacks.shift()!(0);
-
-    expect(focusEl.focus).toHaveBeenCalled();
+    expect(activeElementRef.current).toBe(focusEl);
   });
 
   it("does not switch mode when j/k keys are pressed in preview", () => {

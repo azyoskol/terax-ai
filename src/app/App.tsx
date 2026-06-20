@@ -172,30 +172,35 @@ export default function App() {
   const setMarkdownViewAndFocus = useCallback(
     (id: number, mode: "rendered" | "raw") => {
       setMarkdownView(id, mode);
+
+      function retryAnimationFrames(fn: () => boolean, maxAttempts = 30) {
+        let attempts = 0;
+        const tick = () => {
+          if (fn()) return;
+          if (++attempts < maxAttempts) requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      }
+
       if (mode === "raw") {
-        let attempts = 0;
-        const tryFocus = () => {
+        retryAnimationFrames(() => {
           const handle = editorRefs.current.get(id);
-          if (handle) {
-            handle.focus();
-            return;
-          }
-          if (++attempts < 10) requestAnimationFrame(tryFocus);
-        };
-        requestAnimationFrame(tryFocus);
+          handle?.focus();
+          const active = document.activeElement;
+          return (
+            active instanceof HTMLElement &&
+            !!(active.closest(".cm-editor") || active.closest("[data-editor]"))
+          );
+        });
       } else {
-        let attempts = 0;
-        const tryFocus = () => {
-          const el = document.querySelector(
+        retryAnimationFrames(() => {
+          const el = document.querySelector<HTMLElement>(
             `[data-markdown-preview][data-tab-id="${id}"]`,
-          ) as HTMLElement | null;
-          if (el) {
-            el.focus();
-            return;
-          }
-          if (++attempts < 10) requestAnimationFrame(tryFocus);
-        };
-        requestAnimationFrame(tryFocus);
+          );
+          if (!el) return false;
+          el.focus();
+          return document.activeElement === el;
+        });
       }
     },
     [setMarkdownView],
