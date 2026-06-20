@@ -13,11 +13,12 @@ import {
   type GitLogEntry,
 } from "@/modules/ai/lib/native";
 import { fileIconUrl } from "@/modules/explorer/lib/iconResolver";
-import { isEditableTarget } from "@/modules/keyboard/core/targets";
+import { useRegisterSurface } from "@/modules/keyboard/core/KeyboardSurfaceContext";
 import {
-  interpretVimListKey,
-  isPlainVimKey,
-} from "@/modules/keyboard/core/vimList";
+  useScopedKeymap,
+  getBindingHelp,
+  type KeyBinding,
+} from "@/modules/keyboard/hooks/useScopedKeymap";
 import { KeyboardHelpOverlay } from "@/modules/keyboard/components/KeyboardHelpOverlay";
 import {
   Copy01Icon,
@@ -228,18 +229,7 @@ export function GitHistoryPane({
   const [selectedSha, setSelectedSha] = useState<string | null>(null);
   const [showHelp, setShowHelp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const pendingGRef = useRef<number | null>(null);
 
-  const gitHistoryHelpItems = [
-    { key: "j / k", description: "Navigate" },
-    { key: "gg / G", description: "First / Last" },
-    { key: "Enter / Space", description: "Details" },
-    { key: "Esc", description: "Close details" },
-    { key: "r", description: "Refresh" },
-    { key: "o", description: "Open on remote" },
-    { key: "y", description: "Copy SHA" },
-    { key: "?", description: "Help" },
-  ];
   const filesCacheRef = useRef(new Map<string, FilesEntry>());
   const [filesTick, setFilesTick] = useState(0);
   const bumpFiles = useCallback(() => setFilesTick((n) => n + 1), []);
@@ -542,159 +532,109 @@ export function GitHistoryPane({
     requestAnimationFrame(() => containerRef.current?.focus());
   }, []);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLDivElement>) => {
-      const target = e.target as HTMLElement | null;
-      if (isEditableTarget(target)) return;
+  // --- Named action callbacks for gitHistoryBindings ---
 
-      if (showHelp) {
-        if (e.key === "Escape" || e.key === "?") {
-          e.preventDefault();
-          e.stopPropagation();
-          setShowHelp(false);
-        }
-        return;
-      }
+  const goNext = useCallback(() => {
+    if (filtered.length === 0) return;
+    setSelectedSha((prev) => {
+      const idx = prev ? filtered.findIndex((c) => c.sha === prev) : -1;
+      const next = idx < 0 ? 0 : Math.min(idx + 1, filtered.length - 1);
+      return filtered[next]?.sha ?? null;
+    });
+  }, [filtered]);
 
-      const action = interpretVimListKey(e, pendingGRef);
+  const goPrev = useCallback(() => {
+    if (filtered.length === 0) return;
+    setSelectedSha((prev) => {
+      const idx = prev ? filtered.findIndex((c) => c.sha === prev) : 0;
+      const next = idx < 0 ? 0 : Math.max(idx - 1, 0);
+      return filtered[next]?.sha ?? null;
+    });
+  }, [filtered]);
 
-      if (e.key === " " && isPlainVimKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (openAnchor) {
-          closePopover();
-        } else if (selectedSha) {
-          openCommitDetails(selectedSha);
-        } else if (filtered.length > 0) {
-          setSelectedSha(filtered[0].sha);
-          openCommitDetails(filtered[0].sha);
-        }
-        return;
-      }
+  const goFirst = useCallback(() => {
+    if (filtered.length === 0) return;
+    setSelectedSha(filtered[0].sha);
+  }, [filtered]);
 
-      if (e.key === "r" && isPlainVimKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        handleRefresh();
-        return;
-      }
+  const goLast = useCallback(() => {
+    if (filtered.length === 0) return;
+    setSelectedSha(filtered[filtered.length - 1].sha);
+  }, [filtered]);
 
-      if (e.key === "?" && isPlainVimKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        setShowHelp(true);
-        return;
-      }
+  const toggleDetails = useCallback(() => {
+    if (openAnchor) {
+      closePopover();
+    } else if (selectedSha) {
+      openCommitDetails(selectedSha);
+    } else if (filtered.length > 0) {
+      setSelectedSha(filtered[0].sha);
+      openCommitDetails(filtered[0].sha);
+    }
+  }, [openAnchor, selectedSha, filtered, closePopover, openCommitDetails]);
 
-      if (e.key === "o" && isPlainVimKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (selectedSha && remoteWeb) {
-          const commit = filtered.find((c) => c.sha === selectedSha);
-          if (commit) {
-            const url = commitWebUrl(remoteWeb, commit.sha);
-            void openUrl(url).catch(console.error);
-          }
-        }
-        return;
-      }
+  const handleEscape = useCallback(() => {
+    if (showHelp) { setShowHelp(false); return; }
+    if (openAnchor) closePopover();
+  }, [showHelp, openAnchor, closePopover]);
 
-      if (e.key === "y" && isPlainVimKey(e) && !e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (selectedSha) void copyToClipboard(selectedSha);
-        return;
-      }
+  const toggleHelp = useCallback(() => setShowHelp((v) => !v), []);
 
-      if (e.key === "Y" && isPlainVimKey(e)) {
-        e.preventDefault();
-        e.stopPropagation();
-        if (selectedSha) {
-          const commit = filtered.find((c) => c.sha === selectedSha);
-          if (commit) void copyToClipboard(commit.sha);
-        }
-        return;
-      }
+  const openOnRemote = useCallback(() => {
+    if (selectedSha && remoteWeb) {
+      const commit = filtered.find((c) => c.sha === selectedSha);
+      if (commit) void openUrl(commitWebUrl(remoteWeb, commit.sha)).catch(console.error);
+    }
+  }, [selectedSha, remoteWeb, filtered]);
 
-      switch (action.kind) {
-        case "next": {
-          e.preventDefault();
-          e.stopPropagation();
-          if (filtered.length === 0) return;
-          setSelectedSha((prev) => {
-            const idx = prev
-              ? filtered.findIndex((c) => c.sha === prev)
-              : -1;
-            const next = idx < 0 ? 0 : Math.min(idx + 1, filtered.length - 1);
-            return filtered[next]?.sha ?? null;
-          });
-          return;
-        }
-        case "prev": {
-          e.preventDefault();
-          e.stopPropagation();
-          if (filtered.length === 0) return;
-          setSelectedSha((prev) => {
-            const idx = prev
-              ? filtered.findIndex((c) => c.sha === prev)
-              : 0;
-            const next = idx < 0 ? 0 : Math.max(idx - 1, 0);
-            return filtered[next]?.sha ?? null;
-          });
-          return;
-        }
-        case "first": {
-          e.preventDefault();
-          e.stopPropagation();
-          if (filtered.length === 0) return;
-          setSelectedSha(filtered[0].sha);
-          return;
-        }
-        case "last": {
-          e.preventDefault();
-          e.stopPropagation();
-          if (filtered.length === 0) return;
-          setSelectedSha(filtered[filtered.length - 1].sha);
-          return;
-        }
-        case "activate": {
-          e.preventDefault();
-          e.stopPropagation();
-          if (openAnchor) {
-            closePopover();
-          } else if (selectedSha) {
-            openCommitDetails(selectedSha);
-          } else if (filtered.length > 0) {
-            setSelectedSha(filtered[0].sha);
-            openCommitDetails(filtered[0].sha);
-          }
-          return;
-        }
-        case "escape": {
-          e.preventDefault();
-          e.stopPropagation();
-          if (openAnchor) {
-            closePopover();
-          }
-          return;
-        }
-        case "armG":
-        case "none":
-          return;
-      }
+  const copyShortSha = useCallback(() => {
+    if (!selectedSha) return;
+    const commit = filtered.find((c) => c.sha === selectedSha);
+    void copyToClipboard(commit?.shortSha ?? selectedSha);
+  }, [selectedSha, filtered, copyToClipboard]);
+
+  const copyFullSha = useCallback(() => {
+    if (selectedSha) void copyToClipboard(selectedSha);
+  }, [selectedSha, copyToClipboard]);
+
+  // --- Scoped keymap bindings (drives both key handling and help overlay) ---
+
+  const gitHistoryBindings: KeyBinding[] = [
+    { key: "j", helpKey: "j / k", description: "Navigate", action: goNext, preventDefault: true, when: () => !showHelp },
+    { key: "ArrowDown", description: "Navigate", action: goNext, preventDefault: true, hidden: true, when: () => !showHelp },
+    { key: "k", description: "Navigate", action: goPrev, preventDefault: true, hidden: true, when: () => !showHelp },
+    { key: "ArrowUp", description: "Navigate", action: goPrev, preventDefault: true, hidden: true, when: () => !showHelp },
+    { key: "g", sequence: "gg", helpKey: "gg / G", description: "First / Last", action: goFirst, preventDefault: true, when: () => !showHelp },
+    { key: "G", description: "Last", action: goLast, preventDefault: true, hidden: true, when: () => !showHelp },
+    { key: "Enter", helpKey: "Enter / Space", description: "Details", action: toggleDetails, preventDefault: true, when: () => !showHelp },
+    { key: " ", description: "Details", action: toggleDetails, preventDefault: true, hidden: true, when: () => !showHelp },
+    { key: "Escape", helpKey: "Esc", description: "Close details", action: handleEscape, preventDefault: true },
+    { key: "r", description: "Refresh", action: handleRefresh, preventDefault: true, when: () => !showHelp },
+    { key: "o", description: "Open on remote", action: openOnRemote, preventDefault: true, when: () => !showHelp && !!remoteWeb },
+    { key: "y", helpKey: "y / Y", description: "Copy SHA", action: copyShortSha, preventDefault: true, when: () => !showHelp },
+    { key: "Y", description: "Copy full SHA", action: copyFullSha, preventDefault: true, hidden: true, when: () => !showHelp },
+    { key: "?", description: "Help", action: toggleHelp, preventDefault: true },
+  ];
+
+  useScopedKeymap({
+    scope: "git-history",
+    bindings: gitHistoryBindings,
+  });
+
+  useRegisterSurface({
+    id: `git-history:${repoRoot}`,
+    scope: "git-history",
+    focus: () => {
+      containerRef.current?.focus();
+      return document.activeElement === containerRef.current;
     },
-    [
-      showHelp,
-      handleRefresh,
-      selectedSha,
-      filtered,
-      openAnchor,
-      openCommitDetails,
-      closePopover,
-      remoteWeb,
-      copyToClipboard,
-    ],
-  );
+    isFocused: () => {
+      const active = document.activeElement;
+      return active instanceof Node && !!containerRef.current?.contains(active);
+    },
+    getHelp: () => getBindingHelp(gitHistoryBindings),
+  });
+
 
   const handleRowClick = useCallback(
     (sha: string, event: React.MouseEvent<HTMLElement>) => {
@@ -748,7 +688,6 @@ export function GitHistoryPane({
         role="grid"
         aria-label="Git commit history"
         data-git-history=""
-        onKeyDown={handleKeyDown}
         className="flex h-full min-h-0 flex-col bg-background [contain:layout_style] outline-none"
       >
         {loadStatus === "initial" && commits.length === 0 ? (
@@ -928,7 +867,7 @@ export function GitHistoryPane({
         {showHelp ? (
           <KeyboardHelpOverlay
             title="Git History Keyboard Shortcuts"
-            items={gitHistoryHelpItems}
+            items={getBindingHelp(gitHistoryBindings)}
             onClose={() => setShowHelp(false)}
           />
         ) : null}

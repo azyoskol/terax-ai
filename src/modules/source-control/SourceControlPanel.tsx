@@ -39,6 +39,7 @@ import {
 } from "@/modules/explorer/lib/menuItemClass";
 import { joinPath } from "@/modules/explorer/lib/useFileTree";
 import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
+import { useRegisterSurface } from "@/modules/keyboard/core/KeyboardSurfaceContext";
 import { isEditableTarget } from "@/modules/keyboard/core/targets";
 import {
   AiContentGenerator02Icon,
@@ -166,6 +167,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   const scrollRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const commitInputRef = useRef<HTMLTextAreaElement>(null);
+  const panelRootRef = useRef<HTMLElement>(null);
   const [focusedRowKey, setFocusedRowKey] = useState<string | null>(null);
   const pendingGRef = useRef<number | null>(null);
 
@@ -401,6 +403,11 @@ export const SourceControlPanel = memo(function SourceControlPanel({
     });
   }, []);
 
+  const openDiffForEntry = useCallback((entry: SourceControlFileEntry) => {
+    void scm.selectFile(entry);
+    focusDiffOrEditor();
+  }, [scm, focusDiffOrEditor]);
+
   const handlePanelKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
       if (isEditableTarget(event.target)) {
@@ -451,8 +458,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
             const entry = focusedEntry();
             if (entry) {
               event.preventDefault();
-              void scm.selectFile(entry);
-              focusDiffOrEditor();
+              openDiffForEntry(entry);
             }
             return;
           }
@@ -518,8 +524,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
           const entry = focusedEntry();
           if (entry) {
             event.preventDefault();
-            void scm.selectFile(entry);
-            focusDiffOrEditor();
+            openDiffForEntry(entry);
           }
           break;
         }
@@ -561,9 +566,22 @@ export const SourceControlPanel = memo(function SourceControlPanel({
       focusFirstChange,
       focusLastChange,
       focusCommitInput,
-      focusDiffOrEditor,
+      openDiffForEntry,
     ],
   );
+
+  useRegisterSurface({
+    id: "source-control",
+    scope: "source-control",
+    focus: () => {
+      panelRootRef.current?.focus();
+      return !!panelRootRef.current && document.activeElement === panelRootRef.current;
+    },
+    isFocused: () => {
+      const active = document.activeElement;
+      return active instanceof Node && !!panelRootRef.current?.contains(active);
+    },
+  });
 
   if (!open) return null;
 
@@ -573,6 +591,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
   return (
     <TooltipProvider delayDuration={800} skipDelayDuration={300}>
       <aside
+        ref={panelRootRef}
         className="flex h-full min-w-0 flex-col bg-card/80 backdrop-blur [contain:layout_style] outline-none"
         data-source-control=""
         tabIndex={0}
@@ -792,8 +811,9 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                     if (vimNavigationEnabled && e.key === "Escape") {
                       e.preventDefault();
                       e.stopPropagation();
-                      containerRef.current?.focus();
-
+                      e.currentTarget.blur();
+                      requestAnimationFrame(() => panelRootRef.current?.focus());
+                      return;
                     }
                     handleCommitShortcut(e);
                   }}
@@ -971,7 +991,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
                             repoRoot={scm.repo?.repoRoot ?? null}
                             onFocusRow={setFocusedRowKey}
                             onToggleAll={scm.toggleAll}
-                            onSelectFile={scm.selectFile}
+                            onSelectFile={openDiffForEntry}
                             onToggleStageFile={scm.toggleStageFile}
                             onDiscardFile={scm.requestDiscardFile}
                             onOpenFile={onOpenFile}
@@ -1076,7 +1096,7 @@ type RowRendererProps = {
   repoRoot: string | null;
   onFocusRow: (key: string | null) => void;
   onToggleAll: () => Promise<void> | void;
-  onSelectFile: (entry: SourceControlFileEntry) => Promise<void>;
+  onSelectFile: (entry: SourceControlFileEntry) => Promise<void> | void;
   onToggleStageFile: (entry: SourceControlFileEntry) => Promise<void>;
   onDiscardFile: (entry: SourceControlFileEntry) => void;
   onOpenFile?: (absolutePath: string) => void;

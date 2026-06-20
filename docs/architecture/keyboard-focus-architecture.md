@@ -4,18 +4,18 @@
 
 | Area | Status | Notes |
 |------|--------|-------|
-| Shared focus helpers | **Adopted in App + targets** | `focusWithRetry`, `focusEditorWithRetry`, `focusElementBySelectorWithRetry` replace inline retry loops. More call sites can migrate later. |
-| Surface registry | **Foundation only** | `KeyboardSurfaceRegistry` exists. App registers editor + explorer, but registration is stale (refs may not exist when the `[]` effect runs). No other surface registers. |
-| Surface context / `useRegisterSurface` | **Foundation only** | Hook exists but is not used by any surface component. |
-| Scoped keymap | **Foundation improved, not adopted** | `useScopedKeymap` supports modifiers, strict scope, simple `gg` sequences, and help generation from binding descriptors. Sequence behavior is covered by tests. Pure helpers extracted to `scopedKeymapCore.ts`. Not yet used by panels. |
-| Help overlay | **UI component only** | `KeyboardHelpOverlay` renders a list of `{key, description}`. Help is still passed manually as a static array; not generated from binding definitions. |
-| GitHistory | **Partial** | Uses shared `KeyboardHelpOverlay` and shared `isEditableTarget`. Key handling is still entirely local (`handleKeyDown` with `interpretVimListKey`). |
-| SourceControl | **Local handler** | Uses shared `isEditableTarget` guard. All key handling remains local. |
-| FileExplorer | **Local vim tree hook** | Uses `useVimTreeNavigation` (good local abstraction). Uses shared `isEditableTarget`. Not surface-registry based. |
+| Shared focus helpers | **Adopted** | `focusWithRetry`, `focusEditorWithRetry`, `focusElementBySelectorWithRetry` in use. Single-shot rAF patterns remain acceptable for non-retry cases. |
+| Surface registry | **Partial** | `KeyboardSurfaceRegistry` exists. Editor registered from App (stale; TODO: migrate to EditorPane). GitHistory, SourceControl, FileExplorer self-register via `useRegisterSurface`. |
+| Surface context / `useRegisterSurface` | **Adopted — GitHistory, SourceControl, FileExplorer** | `useRegisterSurface` used in `GitHistoryPane`, `SourceControlPanel`, `FileExplorerContent`. MarkdownPreview, SpaceSwitcher, EditorPane pending. |
+| Scoped keymap | **Adopted — GitHistory** | `useScopedKeymap` drives GitHistory key handling with scope-filtered bindings, `gg` sequence, ArrowKey aliases, and `when` guards. Generates help via `getBindingHelp`. Not yet used by SourceControl or FileExplorer. |
+| Help overlay | **Help-from-bindings — GitHistory** | GitHistory help is generated from `gitHistoryBindings` via `getBindingHelp`. SourceControl and FileExplorer still use manually maintained inline help panels. |
+| GitHistory | **Fully migrated** | Uses `useScopedKeymap` + `useRegisterSurface`. `handleKeyDown` removed. `y` copies short SHA, `Y` copies full SHA. `?` toggles help overlay backed by binding descriptors. Focus restore on popover close in place. |
+| SourceControl | **Partially improved** | Row click now calls `focusDiffOrEditor()` (consistent with keyboard Enter/l). Textarea Esc uses `rAF + explicit blur + panelRootRef`. Discard dialog uses `handleConfirmDialogKeyDown`. Key handling still local (`handlePanelKeyDown`). Self-registers surface. |
+| FileExplorer | **Self-registers surface** | `useVimTreeNavigation` retained (good local abstraction). Delete dialog uses `handleConfirmDialogKeyDown`. Now self-registers as `file-explorer` surface. Key handling unchanged. |
 | MarkdownPreview | **Local** | Uses `useVimScrollNavigation` and shared `isEditableTarget`. Not surface-registry based. |
-| SpaceSwitcher | **Local** | Uses `useVimListNavigation` directly on window. Not surface-registry based. |
-| confirmDialog | **Shared utility** | Works well. Has its own inline editable-target check (intentional: must work with mock targets in tests). |
-| Editable target guards | **Consistent** | `isEditableTarget` from `targets.ts` is now used in FileExplorer, GitDiffPane, SourceControlPanel, and MarkdownPreviewPane. |
+| SpaceSwitcher | **Local** | Uses `useVimListNavigation` on window. Delete dialog uses `handleConfirmDialogKeyDown`. Not surface-registry based. |
+| confirmDialog | **Shared utility** | Used in SourceControl (discard), FileExplorer (delete), SpaceSwitcher (delete). |
+| Editable target guards | **Consistent** | `isEditableTarget` from `targets.ts` used consistently. GitHistory no longer needs it directly (useScopedKeymap handles internally). |
 
 ---
 
@@ -253,50 +253,38 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### `useScopedKeymap` limitations
 
-1. Not adopted by any panel yet — foundation only
+1. Adopted by GitHistory only; SourceControl and FileExplorer still use local handlers
 2. No priority system between keymaps
 3. No capture/bubble configuration (always uses bubble phase on window)
-4. Help generation is available from binding descriptors, but panels do not use it yet
-5. Does not replace `interpretVimListKey` yet — panels still use their own vim handling
-6. Sequence support is simple (same-scope `gg` style) — no arbitrary trie for complex multi-key combos
-7. Attaches to `window` via `addEventListener` — no component-level scoping
-8. Hook-level tests require DOM environment (not available in current test setup)
+4. Sequence support is simple (same-scope `gg` style) — no arbitrary trie for complex multi-key combos
+5. Attaches to `window` via `addEventListener` — no component-level scoping
+6. Hook-level tests require DOM environment (not available in current test setup)
 
 ### `KeyboardSurfaceRegistry` limitations
 
-1. Registration in App may be stale (refs may not exist when effect runs)
-2. `useRegisterSurface` exists but is unused
-3. No surface currently self-registers
-4. `getFocused()` iterates all surfaces — O(n) per keystroke
-5. No subscription for "which scope is focused" changes
+1. Editor registration in App is still stale (refs may not exist when `[]` effect runs); tracked by TODO in App.tsx
+2. `getFocused()` iterates all surfaces — O(n) per keystroke (acceptable for current panel count)
+3. No subscription for "which scope is focused" changes
 
 ### Help overlay limitations
 
 1. SourceControl and FileExplorer use inline help panels, not the shared component
-2. Help text is manually maintained, not derived from binding definitions
+2. SourceControl and FileExplorer help text is manually maintained; only GitHistory derives help from binding definitions
 3. Help items don't distinguish between vim-mode and non-vim-mode bindings
 
-### Migration note: next candidate for adoption
+### Known Bugs — Fixed
 
-**GitHistory** is the best first candidate for `useScopedKeymap` adoption because it has:
-- Clear focus root `[data-git-history]`
-- Finite keymap (j/k, gg/G, Enter, Space, r, o, y, ?, Esc)
-- Existing `selectedRow` state (no complex tree)
-- Existing help overlay (already uses `KeyboardHelpOverlay`)
-- No complex tree expand/collapse logic
+- ~~SourceControl row click may not open diff consistently~~ — **Fixed**: unified `openDiffForEntry` helper
+- ~~Escape from commit textarea focus return may be inconsistent~~ — **Fixed**: rAF + explicit blur + `panelRootRef`
+- ~~GitHistory details popover focus after close may be unreliable~~ — **Confirmed working**: `closePopover` uses rAF + `onCloseAutoFocus` override
+- ~~Confirmation dialogs Enter/y/n/Esc edge cases~~ — **Confirmed working**: `handleConfirmDialogKeyDown` in use across SourceControl, FileExplorer, SpaceSwitcher
 
-SourceControl should be migrated only after GitHistory is stable and proven.
+### Next steps
 
----
-
-## 6. Known Bugs / Urgent Issues
-
-These are separate from architecture work:
-
-- SourceControl row click may not open diff consistently
-- Escape from commit textarea focus return may be inconsistent
-- GitHistory details popover focus after close may be unreliable
-- Confirmation dialogs Enter/y/n/Esc may have edge cases with editable targets
+- Migrate SourceControl key handling to `useScopedKeymap`
+- Migrate FileExplorer surface registration and optionally key handling
+- Migrate editor registration to EditorPane via `useRegisterSurface`
+- Add MarkdownPreview and SpaceSwitcher surface registration
 
 ---
 

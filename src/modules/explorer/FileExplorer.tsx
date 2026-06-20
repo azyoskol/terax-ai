@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
+import { useRegisterSurface } from "@/modules/keyboard/core/KeyboardSurfaceContext";
 import { isEditableTarget } from "@/modules/keyboard/core/targets";
 import { Button } from "@/components/ui/button";
 import {
@@ -380,6 +381,27 @@ const FileExplorerContent = memo(
       }),
       [entryPaths, isSearchActive, isSearchOpen, scrollEntryIntoView, selectedPath],
     );
+
+    useRegisterSurface({
+      id: "file-explorer",
+      scope: "file-explorer",
+      focus: () => {
+        containerRef.current?.focus();
+        if (!selectedPath && entryPaths.length > 0) {
+          const first = entryPaths[0];
+          setSelectedPath(first);
+          requestAnimationFrame(() => scrollEntryIntoView(first));
+        }
+        return true;
+      },
+      isFocused: () => {
+        const c = containerRef.current;
+        if (!c) return false;
+        const active = document.activeElement;
+        return active instanceof Node && c.contains(active);
+      },
+    });
+
 
     useEffect(() => {
       if (!pendingVimCreateRef.current) return;

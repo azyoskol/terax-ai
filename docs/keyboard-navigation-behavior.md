@@ -406,7 +406,24 @@ Calls `preventDefault()` and `stopPropagation()` for all handled keys.
 
 ---
 
-## 11. Architecture / Migration Notes
+## 11. Esc Behavior and Focus Restore
+
+| Context | Esc behavior | Focus target |
+|---|---|---|
+| GitHistory help overlay open | Closes help, keys resume | `[data-git-history]` container (stays focused, overlay removed) |
+| GitHistory commit details popover | Closes popover (Radix `onEscapeKeyDown`) | `[data-git-history]` container (via `onCloseAutoFocus` + `requestAnimationFrame`) |
+| GitHistory — neither | No-op (preventDefault) | No change |
+| SourceControl textarea (`[data-source-control-commit-message]`) | Blurs textarea, focuses panel root | `<aside data-source-control="">` via `requestAnimationFrame` + `panelRootRef` |
+| FileExplorer search close | Closes search panel | `[data-file-explorer]` container via `requestAnimationFrame` |
+| Space switcher | Closes switcher | Previous focus (Radix focus trap) |
+| Buffer picker | Closes picker | Activated tab (via `focusEditorWithRetry`) |
+| Confirmation dialogs (all) | Cancels and closes | AlertDialog dismisses (Radix focus trap restores) |
+
+All focus restores to panel containers use `requestAnimationFrame(() => ref.current?.focus())` to yield to the browser's next paint before re-focusing.
+
+---
+
+## 12. Architecture / Migration Notes
 
 ### File layout
 
@@ -443,23 +460,26 @@ SourceControlPanel, GitDiffPane) are migrated to the new import paths.
 | Component | Uses | Notes |
 |---|---|---|
 | BufferTabPicker | `useVimListNavigation` | Hook manages j/k/gg/G/Enter/Escape + editable target guard + pending-g cleanup |
-| SpaceSwitcher | `useVimListNavigation` | Hook + `onUnhandledPlainKey` for h/l expand/collapse. The early modifier guard (`if (e.ctrlKey ...) return`) before `interpretVimListKey` was removed — the function handles modifiers internally. |
-| ExplorerSearch | `useVimListNavigation` | Hook manages results-list Vim navigation (j/k/gg/G/Enter). Input-specific behavior (Escape, Ctrl+j, ArrowDown/ArrowUp wrap) remains local because of different wrap/focus semantics. Ctrl+k/Ctrl+l (focus input) handled before the hook. Global window listener forwards only `g` to the hook (so gg from outside the results list routes to search results, not the tree); other keys call `clearPendingG`. |
-| SourceControlPanel | `interpretVimListKey` (core) | Uses `interpretVimListKey` directly (not the hook) because of non-contiguous focusable indices (banners, headers interleaved with entries) and virtualized scrolling via `@tanstack/react-virtual`. Domain actions (`l`, `c`, `r`/`R`, Space) remain local. ArrowDown/ArrowUp/s/S/d/D handled in non-vim fallback section. |
-| GitDiffPane | `interpretVimListKey` (core) | Scrolls a CodeMirror view (not a list). Uses `interpretVimListKey` directly with `scrollDiff` callbacks for j/k/gg/G. |
-| GitHistoryPane | `interpretVimListKey` (core) | Uses `interpretVimListKey` directly with virtualized scrolling. Selection model with `selectedSha` state. Domain actions (`r`, `?`, `o`, `y`/`Y`) remain local. Enter/Space open commit details popover. |
+| SpaceSwitcher | `useVimListNavigation` | Hook + `onUnhandledPlainKey` for h/l expand/collapse. Delete confirmation uses `handleConfirmDialogKeyDown`. |
+| ExplorerSearch | `useVimListNavigation` | Hook manages results-list Vim navigation (j/k/gg/G/Enter). Input-specific behavior remains local. |
+| SourceControlPanel | `interpretVimListKey` (core) | Uses `interpretVimListKey` directly with non-contiguous focusable indices. Domain actions local. Row click now unified with keyboard Enter/l via `openDiffForEntry`. Textarea Esc uses rAF + explicit blur + panelRootRef. Self-registers as `source-control` surface. |
+| GitDiffPane | `interpretVimListKey` (core) | Scrolls a CodeMirror view (not a list). |
+| **GitHistoryPane** | **`useScopedKeymap`** | **Fully migrated.** Uses `useScopedKeymap` with scope `git-history`. `useRegisterSurface` for surface registry. Help generated from `gitHistoryBindings` via `getBindingHelp`. `y` = short SHA, `Y` = full SHA. |
+| FileExplorer | `useVimTreeNavigation` | Good local abstraction retained. Delete confirmation uses `handleConfirmDialogKeyDown`. Now self-registers as `file-explorer` surface. |
 
 ### Not yet migrated
 
-- FileExplorer
+- SourceControl key handling → `useScopedKeymap`
+- FileExplorer key handling (consider adapting `useVimTreeNavigation`)
 - Terminal prefix mode in App.tsx
 - Workspace focus shortcuts (`workspace.focusExplorer`, `workspace.focusEditor`)
+- Editor, MarkdownPreview, SpaceSwitcher surface self-registration
 
 These still import from the compatibility re-export at `@/modules/explorer/lib/vimKeys`.
 
 ---
 
-## 12. Markdown files
+## 13. Markdown files
 
 ### Preview / rendered mode
 

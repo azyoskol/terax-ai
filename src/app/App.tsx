@@ -211,48 +211,25 @@ export default function App() {
   const explorerRef = useRef<FileExplorerHandle>(null);
 
   // Register keyboard surfaces for focus management.
-  // TODO: This runs once on mount with empty deps, but refs may not exist yet.
-  // Move registration into individual surface components using useRegisterSurface.
+  // Editor is registered here; other surfaces self-register via useRegisterSurface.
+  // TODO: Migrate editor registration into EditorPane using useRegisterSurface.
   useEffect(() => {
-    const unsubs: (() => void)[] = [];
-
-    if (activeEditorHandleRef.current) {
-      unsubs.push(
-        keyboardSurfaceRegistry.register({
-          id: "editor",
-          scope: "editor",
-          focus: () => {
-            activeEditorHandleRef.current?.focus();
-            return true;
-          },
-          isFocused: () => {
-            const el = document.activeElement;
-            return (
-              el instanceof HTMLElement &&
-              !!(el.closest(".cm-editor") || el.closest("[data-editor]"))
-            );
-          },
-        }),
-      );
-    }
-
-    if (explorerRef.current) {
-      unsubs.push(
-        keyboardSurfaceRegistry.register({
-          id: "file-explorer",
-          scope: "file-explorer",
-          focus: () => {
-            explorerRef.current?.focus();
-            return true;
-          },
-          isFocused: () => explorerRef.current?.isFocused() ?? false,
-        }),
-      );
-    }
-
-    return () => {
-      for (const unsub of unsubs) unsub();
-    };
+    if (!activeEditorHandleRef.current) return;
+    return keyboardSurfaceRegistry.register({
+      id: "editor",
+      scope: "editor",
+      focus: () => {
+        activeEditorHandleRef.current?.focus();
+        return true;
+      },
+      isFocused: () => {
+        const el = document.activeElement;
+        return (
+          el instanceof HTMLElement &&
+          !!(el.closest(".cm-editor") || el.closest("[data-editor]"))
+        );
+      },
+    });
   }, []);
 
   // Drives session disposal off the pane tree, not React lifecycles —
