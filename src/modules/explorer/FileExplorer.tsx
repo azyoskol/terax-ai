@@ -9,6 +9,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
+import { isEditableTarget } from "@/modules/keyboard/core/targets";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -482,14 +483,7 @@ const FileExplorerContent = memo(
         void revealInFinder(id);
       },
       onToggleHelp: () => setShowHelp((v) => !v),
-      isEventTargetIgnored: (target) => {
-        if (!target || !(target instanceof HTMLElement)) return false;
-        return (
-          target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.isContentEditable
-        );
-      },
+      isEventTargetIgnored: (target) => isEditableTarget(target),
       scrollToId: (id) => scrollEntryIntoView(id),
     });
 

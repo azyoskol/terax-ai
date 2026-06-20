@@ -39,6 +39,7 @@ import {
 } from "@/modules/explorer/lib/menuItemClass";
 import { joinPath } from "@/modules/explorer/lib/useFileTree";
 import { handleConfirmDialogKeyDown } from "@/modules/keyboard/core/confirmDialog";
+import { isEditableTarget } from "@/modules/keyboard/core/targets";
 import {
   AiContentGenerator02Icon,
   Alert02Icon,
@@ -402,13 +403,7 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
   const handlePanelKeyDown = useCallback(
     (event: KeyboardEvent<HTMLElement>) => {
-      const target = event.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "TEXTAREA" ||
-          target.tagName === "INPUT" ||
-          target.isContentEditable)
-      ) {
+      if (isEditableTarget(event.target)) {
         return;
       }
       const meta = event.metaKey || event.ctrlKey;

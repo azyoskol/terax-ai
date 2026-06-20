@@ -50,6 +50,10 @@ import {
 } from "@/modules/shortcuts";
 import { useTerminalPrefix } from "@/modules/keyboard/hooks/useTerminalPrefix";
 import {
+  focusEditorWithRetry,
+  focusWithRetry,
+} from "@/modules/keyboard/core/focusHelpers";
+import {
   focusSourceControlPanel,
   isInExplorer,
   isInExplorerSearch,
@@ -57,6 +61,7 @@ import {
   isInSourceControl,
   isTerminalTarget,
 } from "@/modules/keyboard/core/targets";
+import { keyboardSurfaceRegistry } from "@/modules/keyboard/core/KeyboardSurfaceRegistry";
 import {
   SidebarRail,
   SIDEBAR_MAX_WIDTH,
@@ -173,17 +178,8 @@ export default function App() {
     (id: number, mode: "rendered" | "raw") => {
       setMarkdownView(id, mode);
 
-      function retryAnimationFrames(fn: () => boolean, maxAttempts = 30) {
-        let attempts = 0;
-        const tick = () => {
-          if (fn()) return;
-          if (++attempts < maxAttempts) requestAnimationFrame(tick);
-        };
-        requestAnimationFrame(tick);
-      }
-
       if (mode === "raw") {
-        retryAnimationFrames(() => {
+        focusWithRetry(() => {
           const handle = editorRefs.current.get(id);
           handle?.focus();
           const active = document.activeElement;
@@ -193,7 +189,7 @@ export default function App() {
           );
         });
       } else {
-        retryAnimationFrames(() => {
+        focusWithRetry(() => {
           const el = document.querySelector<HTMLElement>(
             `[data-markdown-preview][data-tab-id="${id}"]`,
           );
@@ -213,6 +209,49 @@ export default function App() {
   const { zoomIn, zoomOut, zoomReset } = useZoom();
   useTerminalFileDrop();
   const explorerRef = useRef<FileExplorerHandle>(null);
+
+  // Register keyboard surfaces for focus management
+  useEffect(() => {
+    const unsubs: (() => void)[] = [];
+
+    if (activeEditorHandleRef.current) {
+      unsubs.push(
+        keyboardSurfaceRegistry.register({
+          id: "editor",
+          scope: "editor",
+          focus: () => {
+            activeEditorHandleRef.current?.focus();
+            return true;
+          },
+          isFocused: () => {
+            const el = document.activeElement;
+            return (
+              el instanceof HTMLElement &&
+              !!(el.closest(".cm-editor") || el.closest("[data-editor]"))
+            );
+          },
+        }),
+      );
+    }
+
+    if (explorerRef.current) {
+      unsubs.push(
+        keyboardSurfaceRegistry.register({
+          id: "file-explorer",
+          scope: "file-explorer",
+          focus: () => {
+            explorerRef.current?.focus();
+            return true;
+          },
+          isFocused: () => explorerRef.current?.isFocused() ?? false,
+        }),
+      );
+    }
+
+    return () => {
+      for (const unsub of unsubs) unsub();
+    };
+  }, []);
 
   // Drives session disposal off the pane tree, not React lifecycles —
   // split/unsplit re-mount components but the leaf is still live.
@@ -304,18 +343,7 @@ export default function App() {
     (open: boolean) => {
       _setSwitcherOpen(open);
       if (open) return;
-      let attempts = 0;
-      const tryFocus = () => {
-        activeEditorHandleRef.current?.focus();
-        const el = document.activeElement;
-        if (
-          el instanceof HTMLElement &&
-          (el.closest(".cm-editor") || el.closest("[data-editor]"))
-        )
-          return;
-        if (++attempts < 15) requestAnimationFrame(tryFocus);
-      };
-      requestAnimationFrame(tryFocus);
+      focusEditorWithRetry(activeEditorHandleRef.current);
     },
     [],
   );
@@ -601,18 +629,7 @@ export default function App() {
   );
 
   const handleFileOpened = useCallback(() => {
-    let attempts = 0;
-    const tryFocus = () => {
-      activeEditorHandleRef.current?.focus();
-      const el = document.activeElement;
-      if (
-        el instanceof HTMLElement &&
-        (el.closest(".cm-editor") || el.closest("[data-editor]"))
-      )
-        return;
-      if (++attempts < 15) requestAnimationFrame(tryFocus);
-    };
-    requestAnimationFrame(tryFocus);
+    focusEditorWithRetry(activeEditorHandleRef.current);
   }, []);
 
   const handlePathRenamed = useCallback(
@@ -1106,18 +1123,7 @@ export default function App() {
       setActiveId(tabId);
       useSpaces.getState().setActive(t.spaceId);
       setBufferPickerOpen(false);
-      let attempts = 0;
-      const tryFocus = () => {
-        activeEditorHandleRef.current?.focus();
-        const el = document.activeElement;
-        if (
-          el instanceof HTMLElement &&
-          (el.closest(".cm-editor") || el.closest("[data-editor]"))
-        )
-          return;
-        if (++attempts < 15) requestAnimationFrame(tryFocus);
-      };
-      requestAnimationFrame(tryFocus);
+      focusEditorWithRetry(activeEditorHandleRef.current);
     },
     [setActiveId],
   );

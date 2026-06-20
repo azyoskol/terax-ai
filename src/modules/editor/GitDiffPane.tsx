@@ -10,6 +10,7 @@ import { usePreferencesStore } from "@/modules/settings/preferences";
 import {
   interpretVimListKey,
 } from "@/modules/keyboard/core/vimList";
+import { isEditableTarget } from "@/modules/keyboard/core/targets";
 import { buildSharedExtensions, languageCompartment } from "./lib/extensions";
 import {
   fetchCommitDiff,
@@ -299,13 +300,7 @@ export function GitDiffPane({ source, chipLabel, active }: Props) {
   const handleDiffKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLDivElement>) => {
       if (!vimNavigationEnabled) return;
-      const target = e.target as HTMLElement | null;
-      if (
-        target &&
-        (target.tagName === "TEXTAREA" ||
-          target.tagName === "INPUT" ||
-          target.isContentEditable)
-      ) {
+      if (isEditableTarget(e.target)) {
         return;
       }
 

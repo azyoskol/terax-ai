@@ -1,3 +1,5 @@
+import { focusElementBySelectorWithRetry } from "./focusHelpers";
+
 /** Check if a DOM target is an editable input/textarea/contentEditable. */
 export function isEditableTarget(
   target: EventTarget | HTMLElement | null,
@@ -65,14 +67,5 @@ export function isInSourceControl(
  * Retries across several animation frames in case the panel isn't mounted yet.
  */
 export function focusSourceControlPanel(): void {
-  let attempts = 0;
-  const tryFocus = () => {
-    const el = document.querySelector<HTMLElement>("[data-source-control]");
-    if (el) {
-      el.focus();
-      return;
-    }
-    if (++attempts < 10) requestAnimationFrame(tryFocus);
-  };
-  requestAnimationFrame(tryFocus);
+  focusElementBySelectorWithRetry("[data-source-control]");
 }

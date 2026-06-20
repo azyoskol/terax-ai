@@ -1,5 +1,4 @@
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import {
   Popover,
   PopoverAnchor,
@@ -19,6 +18,7 @@ import {
   interpretVimListKey,
   isPlainVimKey,
 } from "@/modules/keyboard/core/vimList";
+import { KeyboardHelpOverlay } from "@/modules/keyboard/components/KeyboardHelpOverlay";
 import {
   Copy01Icon,
   File02Icon,
@@ -229,6 +229,17 @@ export function GitHistoryPane({
   const [showHelp, setShowHelp] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const pendingGRef = useRef<number | null>(null);
+
+  const gitHistoryHelpItems = [
+    { key: "j / k", description: "Navigate" },
+    { key: "gg / G", description: "First / Last" },
+    { key: "Enter / Space", description: "Details" },
+    { key: "Esc", description: "Close details" },
+    { key: "r", description: "Refresh" },
+    { key: "o", description: "Open on remote" },
+    { key: "y", description: "Copy SHA" },
+    { key: "?", description: "Help" },
+  ];
   const filesCacheRef = useRef(new Map<string, FilesEntry>());
   const [filesTick, setFilesTick] = useState(0);
   const bumpFiles = useCallback(() => setFilesTick((n) => n + 1), []);
@@ -915,60 +926,11 @@ export function GitHistoryPane({
         </Popover>
 
         {showHelp ? (
-          <div
-            data-git-history-help=""
-            role="button"
-            tabIndex={-1}
-            className="pointer-events-auto absolute inset-0 z-10 flex items-center justify-center bg-background/80 backdrop-blur-sm"
-            onClick={() => setShowHelp(false)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape" || e.key === "Enter" || e.key === " ") {
-                setShowHelp(false);
-              }
-            }}
-          >
-            <div
-              role="dialog"
-              aria-label="Keyboard shortcuts"
-              className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-5 shadow-xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="text-[13px] font-semibold text-foreground">
-                Git History Keyboard Shortcuts
-              </div>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-[11.5px]">
-                <span className="text-muted-foreground">Navigate</span>
-                <span>
-                  <Kbd>j</Kbd> / <Kbd>k</Kbd>
-                </span>
-                <span className="text-muted-foreground">First / Last</span>
-                <span>
-                  <Kbd>gg</Kbd> / <Kbd>G</Kbd>
-                </span>
-                <span className="text-muted-foreground">Details</span>
-                <span>
-                  <Kbd>Enter</Kbd> / <Kbd>Space</Kbd>
-                </span>
-                <span className="text-muted-foreground">Close details</span>
-                <Kbd>Esc</Kbd>
-                <span className="text-muted-foreground">Refresh</span>
-                <Kbd>r</Kbd>
-                <span className="text-muted-foreground">Open on remote</span>
-                <Kbd>o</Kbd>
-                <span className="text-muted-foreground">Copy SHA</span>
-                <Kbd>y</Kbd>
-                <span className="text-muted-foreground">Help</span>
-                <Kbd>?</Kbd>
-              </div>
-              <button
-                type="button"
-                className="mt-1 self-end text-[11px] text-muted-foreground hover:text-foreground"
-                onClick={() => setShowHelp(false)}
-              >
-                Close
-              </button>
-            </div>
-          </div>
+          <KeyboardHelpOverlay
+            title="Git History Keyboard Shortcuts"
+            items={gitHistoryHelpItems}
+            onClose={() => setShowHelp(false)}
+          />
         ) : null}
       </div>
     </TooltipProvider>
