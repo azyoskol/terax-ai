@@ -220,8 +220,11 @@ File navigation (`j`/`k`/`gg`/`G`/`l`/`Space`) does nothing when there are no ch
 
 ### Skipped conditions
 All key handling is skipped when the event target is a `TEXTAREA`, `INPUT`, or
-`contentEditable` element (except `Ctrl+Enter`, `Ctrl+G`, and `Escape` which are
-handled inside the commit textarea itself).
+`contentEditable` element. The commit textarea is an exception — it handles:
+
+- `Ctrl/Cmd+Enter` — commit staged changes
+- `Ctrl/Cmd+G` — generate commit message (when AI available)
+- `Escape` — blur textarea, return focus to `[data-source-control]` panel root
 
 ### Discard confirmation behavior
 

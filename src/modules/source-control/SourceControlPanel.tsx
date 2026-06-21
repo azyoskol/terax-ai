@@ -403,21 +403,23 @@ export const SourceControlPanel = memo(function SourceControlPanel({
 
   const focusDiffOrEditor = useCallback(() => {
     requestAnimationFrame(() => {
-      const diffView = document.querySelector<HTMLElement>(
-        "[data-source-control-diff]",
-      );
-      if (diffView) {
-        diffView.focus();
-        return;
-      }
-      const workspace = document.getElementById("workspace");
-      const cmEditor = workspace?.querySelector<HTMLElement>(".cm-editor");
-      cmEditor?.focus();
+      requestAnimationFrame(() => {
+        const diffView = document.querySelector<HTMLElement>(
+          "[data-source-control-diff]",
+        );
+        if (diffView) {
+          diffView.focus();
+          return;
+        }
+        const workspace = document.getElementById("workspace");
+        const cmEditor = workspace?.querySelector<HTMLElement>(".cm-editor");
+        cmEditor?.focus();
+      });
     });
   }, []);
 
-  const openDiffForEntry = useCallback((entry: SourceControlFileEntry) => {
-    void scm.selectFile(entry);
+  const openDiffForEntry = useCallback(async (entry: SourceControlFileEntry) => {
+    await scm.selectFile(entry);
     focusDiffOrEditor();
   }, [scm, focusDiffOrEditor]);
 

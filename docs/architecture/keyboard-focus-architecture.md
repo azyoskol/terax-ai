@@ -136,11 +136,12 @@ All focus detection uses `data-*` attributes queried via `element.closest()` or 
 
 ### 2.2 Scope Detection Method
 
-No formal scope registry. Detection is ad-hoc via:
+`KeyboardSurfaceRegistry` exists and is partially adopted. Detection is a mix of:
 - `element.closest("[data-*]")` checks in `targets.ts`
 - `isTerminalTarget()` checking `.xterm` ancestor
 - `isEditableTarget()` checking INPUT/TEXTAREA/contentEditable
 - Contextual checks in `App.tsx` `isDisabled` callback
+- `getFocused()` on the registry for registered surfaces
 
 ---
 
@@ -189,17 +190,17 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### Surface registry
 
-**Current:** `KeyboardSurfaceRegistry` exists. App.tsx registers only the editor surface in a `useEffect([], [])` (stale; TODO: migrate to EditorPane). GitHistory, SourceControl, and FileExplorer self-register via `useRegisterSurface` in their component bodies.
+**Current:** `KeyboardSurfaceRegistry` exists. Editor is still registered from App.tsx (stale; TODO: migrate to EditorPane). GitHistory, SourceControl, and FileExplorer self-register via `useRegisterSurface` in their component bodies.
 
 **Target:** Each focusable surface self-registers via `useRegisterSurface`.
 
-**Gap:** Editor registration still in App and potentially stale. MarkdownPreview and SpaceSwitcher are not surface-registry based.
+**Gap:** Editor registration still in App and potentially stale. MarkdownPreview and SpaceSwitcher are not yet surface-registry based.
 
 **Next step:** Migrate editor registration into EditorPane via `useRegisterSurface`. Add MarkdownPreview and SpaceSwitcher registration.
 
 ### Scoped keymaps
 
-**Current:** `useScopedKeymap` supports modifiers, `gg` sequences, strict scope behavior (`activeWhenNoSurface: false` by default), and help generation from binding descriptors. Pure helpers are in `scopedKeymapCore.ts`. Sequence bug fixed (previously `armSequence` cleared state immediately). **Adopted by GitHistory**; SourceControl and FileExplorer still use local handlers.
+**Current:** `useScopedKeymap` supports modifiers, `gg` sequences, strict scope behavior (`activeWhenNoSurface: false` by default), and help generation from binding descriptors. Pure helpers are in `scopedKeymapCore.ts`. **Adopted by GitHistory**; SourceControl and FileExplorer still use local handlers.
 
 **Target:** Panels use scoped keymaps for their key handling.
 
@@ -213,7 +214,7 @@ No formal scope registry. Detection is ad-hoc via:
 
 **Target:** Help text generated from binding definitions for all surfaces.
 
-**Gap:** SourceControl and FileExplorer help text is manually maintained and not derived from binding descriptors.
+**Gap:** SourceControl and FileExplorer help text is manually maintained and not derived from binding descriptors. Help items don't distinguish between vim-mode and non-vim-mode bindings.
 
 **Next step:** Derive SourceControl help from binding descriptors when migrating to `useScopedKeymap`.
 
@@ -253,7 +254,7 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### `useScopedKeymap` limitations
 
-1. Adopted by GitHistory only; SourceControl and FileExplorer still use local handlers
+1. Adopted by GitHistory; SourceControl and FileExplorer still use local handlers
 2. No priority system between keymaps
 3. No capture/bubble configuration (always uses bubble phase on window)
 4. Sequence support is simple (same-scope `gg` style) — no arbitrary trie for complex multi-key combos
@@ -274,7 +275,7 @@ No formal scope registry. Detection is ad-hoc via:
 
 ### Known Bugs — Fixed
 
-- ~~SourceControl row click may not open diff consistently~~ — **Fixed**: unified `openDiffForEntry` helper
+- ~~SourceControl row click may not open diff consistently~~ — **Fixed**: unified `openDiffForEntry` helper; async-safe with `await` and double rAF
 - ~~Escape from commit textarea focus return may be inconsistent~~ — **Fixed**: rAF + explicit blur + `panelRootRef`
 - ~~GitHistory details popover focus after close may be unreliable~~ — **Confirmed working**: `closePopover` uses rAF + `onCloseAutoFocus` override
 - ~~Confirmation dialogs Enter/y/n/Esc edge cases~~ — **Confirmed working**: `handleConfirmDialogKeyDown` in use across SourceControl, FileExplorer, SpaceSwitcher
@@ -321,7 +322,7 @@ type KeyboardSurfaceHandle = {
 };
 ```
 
-### 7.3 Scoped Keymap (Implemented, Not Adopted)
+### 7.3 Scoped Keymap (Implemented, Partially Adopted)
 
 ```typescript
 type KeyBinding = {
@@ -380,10 +381,10 @@ function focusEditorWithRetry(editorHandle: { focus: () => void } | null): void;
 **Goal:** Fix known keyboard UX issues without architecture changes.
 
 **Tasks:**
-- [ ] SourceControl row click opens diff
-- [ ] Esc from commit textarea returns panel focus
-- [ ] GitGraph focus after details closes
-- [ ] Confirm dialogs Enter/y/n/Esc edge cases
+- [x] SourceControl row click opens diff
+- [x] Esc from commit textarea returns panel focus
+- [x] GitGraph focus after details closes
+- [x] Confirm dialogs Enter/y/n/Esc edge cases
 
 **Files likely touched:** SourceControlPanel.tsx, GitHistoryPane.tsx, confirmDialog.ts
 **Risk level:** Low
@@ -413,9 +414,9 @@ function focusEditorWithRetry(editorHandle: { focus: () => void } | null): void;
 **Goal:** Move registration from App into individual surface components.
 
 **Tasks:**
-- [ ] Register GitHistoryPane via `useRegisterSurface`
-- [ ] Register SourceControlPanel via `useRegisterSurface`
-- [ ] Register FileExplorer via `useRegisterSurface`
+- [x] Register GitHistoryPane via `useRegisterSurface`
+- [x] Register SourceControlPanel via `useRegisterSurface`
+- [x] Register FileExplorer via `useRegisterSurface`
 - [ ] Register MarkdownPreviewPane via `useRegisterSurface`
 - [ ] Register EditorPane/EditorStack via `useRegisterSurface`
 - [ ] Remove stale registration from App.tsx
@@ -433,11 +434,11 @@ function focusEditorWithRetry(editorHandle: { focus: () => void } | null): void;
 **Goal:** Add modifier support, sequence support, and strict focus mode.
 
 **Tasks:**
-- [ ] Add modifier descriptor model (`{ ctrl, shift, alt, meta }`)
-- [ ] Add `gg`/sequence support with pending-g state
-- [ ] Add strict focused-scope behavior by default
-- [ ] Add optional `activeWhenNoSurface` flag
-- [ ] Return/export help items from binding descriptors
+- [x] Add modifier descriptor model (`{ ctrl, shift, alt, meta }`)
+- [x] Add `gg`/sequence support with pending-g state
+- [x] Add strict focused-scope behavior by default
+- [x] Add optional `activeWhenNoSurface` flag
+- [x] Return/export help items from binding descriptors
 
 **Files likely touched:** useScopedKeymap.ts
 **Risk level:** Medium
@@ -451,9 +452,9 @@ function focusEditorWithRetry(editorHandle: { focus: () => void } | null): void;
 **Goal:** Use `useScopedKeymap` for GitHistory keyboard handling.
 
 **Tasks:**
-- [ ] Convert GitHistory `handleKeyDown` to `useScopedKeymap` bindings
-- [ ] Keep domain actions (open details, refresh, copy SHA) local
-- [ ] Move key interpretation to shared layer
+- [x] Convert GitHistory `handleKeyDown` to `useScopedKeymap` bindings
+- [x] Keep domain actions (open details, refresh, copy SHA) local
+- [x] Move key interpretation to shared layer
 
 **Files likely touched:** GitHistoryPane.tsx
 **Risk level:** Medium
